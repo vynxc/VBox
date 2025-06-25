@@ -23,7 +23,4 @@
 #include "usb_hid_callbacks.h"
 #include "usb_hid_stats.h"
 
-// Main initialization function
-bool usb_hid_init_all(void);
-
 #endif // USB_HID_H

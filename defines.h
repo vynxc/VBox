@@ -19,11 +19,21 @@
 #ifndef PIN_USB_HOST_DM
 #define PIN_USB_HOST_DM         (17u)   // PIO USB Host D- pin
 #endif
+#ifndef PIN_BUTTON
 #define PIN_BUTTON              (7u)    // Reset button pin
+#endif
+#ifndef PIN_USB_5V
 #define PIN_USB_5V              (18u)   // Power pin for USB host
+#endif
+#ifndef PIN_LED
 #define PIN_LED                 (13u)   // Status LED pin
+#endif
+#ifndef PIN_NEOPIXEL
 #define PIN_NEOPIXEL            (21u)   // Neopixel data pin
+#endif
+#ifndef NEOPIXEL_POWER
 #define NEOPIXEL_POWER          (20u)   // Neopixel power pin
+#endif
 
 // USB port configuration
 #define USB_DEVICE_PORT         0       // On-board USB controller port (device mode)
@@ -36,6 +46,45 @@
 
 // System clock configuration
 #define PIO_USB_SYSTEM_CLOCK_KHZ 120000 // 120MHz system clock required for PIO USB
+
+//--------------------------------------------------------------------+
+// RP2040/RP2350 SPECIFIC CONFIGURATION
+//--------------------------------------------------------------------+
+
+// On some samples, the xosc can take longer to stabilize than is usual
+#define PICO_XOSC_STARTUP_DELAY_MULTIPLIER 64
+
+// Use slower generic flash access for RP2040
+#define PICO_BOOT_STAGE2_CHOOSE_GENERIC_03H 1
+
+// Flash SPI clock divider (RP2040=4, RP2350=2)
+#ifndef PICO_FLASH_SPI_CLKDIV
+#if defined(TARGET_RP2350)
+#define PICO_FLASH_SPI_CLKDIV 2  // RP2350 default
+#else
+#define PICO_FLASH_SPI_CLKDIV 4  // RP2040 default
+#endif
+#endif
+
+// Flash size (8MB)
+#ifndef PICO_FLASH_SIZE_BYTES
+#define PICO_FLASH_SIZE_BYTES (8 * 1024 * 1024)
+#endif
+
+// Chip revision support
+#if defined(TARGET_RP2350)
+#define PICO_RP2350A 1              // RP2350 variant
+#define PICO_RP2350_A2_SUPPORTED 1  // Support A2 revision for RP2350
+#else
+#ifndef PICO_RP2040_B0_SUPPORTED
+#define PICO_RP2040_B0_SUPPORTED 0  // All RP2040 boards have B1
+#endif
+#endif
+
+// Default WS2812 pin for RP2350
+#if defined(TARGET_RP2350)
+#define PICO_DEFAULT_WS2812_PIN 21
+#endif
 
 //--------------------------------------------------------------------+
 // TIMING CONSTANTS

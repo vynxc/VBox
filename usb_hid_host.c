@@ -13,16 +13,6 @@
 // External declarations for variables defined in other modules
 extern device_connection_state_t connection_state;
 
-// Forward declarations for static functions
-void handle_device_disconnection(uint8_t dev_addr);
-void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol);
-
-void hid_host_task(void)
-{
-    // This function can be called from core0 if needed for additional host processing
-    // The main host task loop runs on core1 in PIOKMbox.c
-}
-
 bool is_mouse_connected(void)
 {
     return connection_state.mouse_connected;

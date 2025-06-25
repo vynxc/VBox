@@ -9,9 +9,6 @@
 #include <stdint.h>
 #include "usb_hid_types.h"
 
-// Host mode functions
-void hid_host_task(void);
-
 // Connection state functions
 bool is_mouse_connected(void);
 bool is_keyboard_connected(void);

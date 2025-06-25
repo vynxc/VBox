@@ -23,6 +23,9 @@ extern char serial_string[SERIAL_STRING_BUFFER_SIZE];
 static bool usb_device_initialized = false;
 static bool usb_host_initialized = false;
 
+// Error tracking constants
+#define MAX_CONSECUTIVE_ERRORS 5  // Maximum consecutive errors before reset
+
 bool usb_hid_init(void)
 {
     // Generate unique serial string from chip ID
@@ -88,10 +91,13 @@ static bool init_gpio_pins(void)
     gpio_set_dir(PIN_BUTTON, GPIO_IN);
     gpio_pull_up(PIN_BUTTON);
     
+#ifndef TARGET_RP2350
     // USB 5V power pin initialization but keep it OFF during early boot
+    // Only for RP2040 boards, not needed for RP2350 which uses plain USB
     gpio_init(PIN_USB_5V);
     gpio_set_dir(PIN_USB_5V, GPIO_OUT);
     gpio_put(PIN_USB_5V, 0); // Keep USB power OFF initially for cold boot stability
+#endif
     
     return true;
 }
@@ -99,9 +105,15 @@ static bool init_gpio_pins(void)
 bool usb_host_enable_power(void)
 {
     LOG_INIT("Enabling USB host power...");
+#ifndef TARGET_RP2350
+    // Only control the 5V power pin on RP2040 boards
     gpio_put(PIN_USB_5V, 1); // Enable USB power
     sleep_ms(100); // Allow power to stabilize
     LOG_INIT("USB host power enabled on pin %d", PIN_USB_5V);
+#else
+    // RP2350 uses plain USB, no need to control 5V pin
+    LOG_INIT("RP2350 detected - using plain USB (no 5V pin control needed)");
+#endif
     return true;
 }
 
@@ -115,26 +127,97 @@ void usb_host_mark_initialized(void)
     usb_host_initialized = true;
 }
 
-// USB stack reset functions - these would be implemented based on the original code
+// USB stack reset functions
 bool usb_device_stack_reset(void)
 {
-    // Implementation would go here
-    return true;
+    LOG_INIT("Resetting USB device stack...");
+    
+    // Reset device stack state
+    usb_device_initialized = false;
+    
+    // Reinitialize the device stack
+    bool success = tud_init(USB_DEVICE_PORT);
+    
+    if (success) {
+        usb_device_mark_initialized();
+        LOG_INIT("USB device stack reset successful");
+    } else {
+        LOG_ERROR("USB device stack reset failed");
+    }
+    
+    return success;
 }
 
 bool usb_host_stack_reset(void)
 {
-    // Implementation would go here
-    return true;
+    LOG_INIT("Resetting USB host stack...");
+    
+    // Reset host stack state
+    usb_host_initialized = false;
+    
+    // Power cycle the USB host port
+#ifndef TARGET_RP2350
+    // Only power cycle on RP2040 boards
+    gpio_put(PIN_USB_5V, 0);
+    sleep_ms(500); // Wait for power to fully discharge
+    gpio_put(PIN_USB_5V, 1);
+    sleep_ms(500); // Wait for power to stabilize
+#else
+    // RP2350 uses plain USB, no need to power cycle
+    LOG_INIT("RP2350 detected - skipping 5V power cycle (using plain USB)");
+    sleep_ms(500); // Still wait for stability
+#endif
+    
+    // Reinitialize the host stack
+    bool success = tuh_init(USB_HOST_PORT);
+    
+    if (success) {
+        usb_host_mark_initialized();
+        LOG_INIT("USB host stack reset successful");
+    } else {
+        LOG_ERROR("USB host stack reset failed");
+    }
+    
+    return success;
 }
 
 bool usb_stacks_reset(void)
 {
-    // Implementation would go here
-    return true;
+    LOG_INIT("Resetting both USB stacks...");
+    
+    // Reset both device and host stacks
+    bool device_reset = usb_device_stack_reset();
+    bool host_reset = usb_host_stack_reset();
+    
+    return device_reset && host_reset;
 }
 
 void usb_stack_error_check(void)
 {
-    // Implementation would go here
+    // Check for USB stack errors and reset if necessary
+    extern usb_error_tracker_t usb_error_tracker;
+    
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());
+    
+    // Only check periodically
+    if (current_time - usb_error_tracker.last_error_check_time < ERROR_CHECK_INTERVAL_MS) {
+        return;
+    }
+    
+    usb_error_tracker.last_error_check_time = current_time;
+    
+    // Check for consecutive errors
+    if (usb_error_tracker.consecutive_device_errors > MAX_CONSECUTIVE_ERRORS) {
+        LOG_ERROR("Too many consecutive device errors (%lu), resetting device stack",
+                 usb_error_tracker.consecutive_device_errors);
+        usb_device_stack_reset();
+        usb_error_tracker.consecutive_device_errors = 0;
+    }
+    
+    if (usb_error_tracker.consecutive_host_errors > MAX_CONSECUTIVE_ERRORS) {
+        LOG_ERROR("Too many consecutive host errors (%lu), resetting host stack",
+                 usb_error_tracker.consecutive_host_errors);
+        usb_host_stack_reset();
+        usb_error_tracker.consecutive_host_errors = 0;
+    }
 }

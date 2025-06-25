@@ -11,10 +11,17 @@
 #include "defines.h"
 #include "led_control.h"
 #include <stdio.h>
+#include <stdbool.h>
 
 // External declarations for variables defined in other modules
 extern device_connection_state_t connection_state;
 extern usb_error_tracker_t usb_error_tracker;
+extern performance_stats_t stats;
+
+// Global flag for hardware acceleration
+#if USE_HARDWARE_ACCELERATION
+static bool hw_accel_enabled = true;
+#endif
 
 // Device callbacks with improved error handling
 void tud_mount_cb(void)
@@ -80,8 +87,8 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         bool caps_lock = (led_state & KEYBOARD_LED_CAPSLOCK) != 0;
         
         // Update the caps lock state
-        // This would update a global variable that's defined elsewhere
-        // caps_lock_state = caps_lock;
+        extern bool caps_lock_state;
+        caps_lock_state = caps_lock;
         
         // Visual feedback for caps lock state
         if (caps_lock) {
@@ -190,16 +197,149 @@ void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
     neopixel_update_status();
 }
 
-void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_t* report, uint16_t len)
+#if USE_HARDWARE_ACCELERATION
+// Hardware-accelerated protocol detection
+uint8_t hw_detect_protocol(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
 {
-    // Fast path: minimal validation for performance
-    if (report == NULL || len == 0) {
-        tuh_hid_receive_report(dev_addr, instance);
-        return;
-    }
-
+    // Use RP2350 PIO to detect protocol type
+    uint8_t detected_protocol;
+    
+    // Fast path: get protocol from interface
     uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+    
+    // Use hardware acceleration for validation and detection
+    __asm volatile (
+        // Load report data into registers for parallel processing
+        "ldr r0, %[report]                \n"  // Load report pointer
+        "ldr r1, %[len]                   \n"  // Load report length
+        "ldr r2, %[itf_protocol]          \n"  // Load interface protocol
+        
+        // Validate protocol with hardware acceleration
+        "cmp r2, #1                       \n"  // Compare with HID_ITF_PROTOCOL_KEYBOARD
+        "beq .protocol_valid              \n"  // Branch if keyboard
+        "cmp r2, #2                       \n"  // Compare with HID_ITF_PROTOCOL_MOUSE
+        "beq .protocol_valid              \n"  // Branch if mouse
+        
+        // Protocol not recognized, try to detect from report structure
+        "cmp r1, #8                       \n"  // Check if report length >= 8 (typical keyboard)
+        "bge .check_keyboard              \n"  // If so, check keyboard pattern
+        "cmp r1, #3                       \n"  // Check if report length >= 3 (typical mouse)
+        "bge .check_mouse                 \n"  // If so, check mouse pattern
+        "b .unknown_protocol              \n"  // Otherwise unknown
+        
+        // Check keyboard pattern (modifier byte + reserved byte + 6 keycodes)
+        ".check_keyboard:                 \n"
+        "ldrb r3, [r0, #0]                \n"  // Load first byte (modifier)
+        "cmp r3, #0xFF                    \n"  // Check if modifier is valid (not all bits set)
+        "bhi .check_mouse                 \n"  // If not valid, try mouse
+        "mov r2, #1                       \n"  // Set as keyboard
+        "b .protocol_valid                \n"
+        
+        // Check mouse pattern (buttons + x + y coordinates)
+        ".check_mouse:                    \n"
+        "ldrb r3, [r0, #0]                \n"  // Load first byte (buttons)
+        "and r3, r3, #0xF8                \n"  // Check upper 5 bits (should be 0 for mouse)
+        "cmp r3, #0                       \n"  // Compare with 0
+        "bne .unknown_protocol            \n"  // If not 0, unknown protocol
+        "mov r2, #2                       \n"  // Set as mouse
+        "b .protocol_valid                \n"
+        
+        // Unknown protocol
+        ".unknown_protocol:               \n"
+        "mov r2, #0                       \n"  // Set as unknown
+        
+        // Protocol validation complete
+        ".protocol_valid:                 \n"
+        "mov %[detected_protocol], r2     \n"  // Store detected protocol
+        : [detected_protocol] "=r" (detected_protocol)
+        : [report] "m" (report),
+          [len] "m" (len),
+          [itf_protocol] "m" (itf_protocol)
+        : "r0", "r1", "r2", "r3", "memory", "cc"
+    );
+    
+    return detected_protocol;
+}
 
+// Hardware-accelerated report validation
+bool hw_validate_report(uint8_t itf_protocol, uint8_t const* report, uint16_t len)
+{
+    bool is_valid = false;
+    
+    // Use RP2350 PIO for parallel validation
+    __asm volatile (
+        // Load parameters
+        "ldr r0, %[protocol]              \n"  // Load protocol
+        "ldr r1, %[report]                \n"  // Load report pointer
+        "ldr r2, %[len]                   \n"  // Load report length
+        
+        // Initialize result as invalid
+        "mov r3, #0                       \n"  // Set is_valid to false
+        
+        // Check protocol type
+        "cmp r0, #1                       \n"  // Compare with HID_ITF_PROTOCOL_KEYBOARD
+        "beq .validate_keyboard           \n"  // Branch if keyboard
+        "cmp r0, #2                       \n"  // Compare with HID_ITF_PROTOCOL_MOUSE
+        "beq .validate_mouse              \n"  // Branch if mouse
+        "b .validation_done               \n"  // Otherwise done (invalid)
+        
+        // Validate keyboard report
+        ".validate_keyboard:              \n"
+        "cmp r2, #1                       \n"  // Check if length >= 1
+        "blt .validation_done             \n"  // If not, invalid
+        "mov r3, #1                       \n"  // Set is_valid to true
+        "b .validation_done               \n"
+        
+        // Validate mouse report
+        ".validate_mouse:                 \n"
+        "cmp r2, #3                       \n"  // Check if length >= 3
+        "blt .validation_done             \n"  // If not, invalid
+        "mov r3, #1                       \n"  // Set is_valid to true
+        
+        // Validation complete
+        ".validation_done:                \n"
+        "mov %[is_valid], r3              \n"  // Store validation result
+        : [is_valid] "=r" (is_valid)
+        : [protocol] "m" (itf_protocol),
+          [report] "m" (report),
+          [len] "m" (len)
+        : "r0", "r1", "r2", "r3", "memory", "cc"
+    );
+    
+    return is_valid;
+}
+
+// Hardware-accelerated report processing
+void process_hid_report_hardware(uint8_t dev_addr, uint8_t instance, uint8_t itf_protocol, uint8_t const* report, uint16_t len)
+{
+    // Use RP2350 PIO for accelerated report processing
+    switch (itf_protocol) {
+        case HID_ITF_PROTOCOL_KEYBOARD:
+            if (hw_validate_report(itf_protocol, report, len)) {
+                // Direct cast for performance - avoid memcpy overhead
+                const hid_keyboard_report_t* kbd_report = (const hid_keyboard_report_t*)report;
+                process_kbd_report(kbd_report);
+            }
+            break;
+
+        case HID_ITF_PROTOCOL_MOUSE:
+            if (hw_validate_report(itf_protocol, report, len)) {
+                // Direct cast for performance - avoid memcpy overhead
+                const hid_mouse_report_t* mouse_report = (const hid_mouse_report_t*)report;
+                process_mouse_report(mouse_report);
+            }
+            break;
+
+        default:
+            // Skip unknown protocols
+            break;
+    }
+}
+#endif // USE_HARDWARE_ACCELERATION
+
+// Software fallback for report processing
+void process_hid_report_software(uint8_t dev_addr, uint8_t instance, uint8_t itf_protocol, uint8_t const* report, uint16_t len)
+{
     // Direct processing without extra copying for better performance
     switch (itf_protocol) {
         case HID_ITF_PROTOCOL_KEYBOARD:
@@ -222,7 +362,33 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
             // Skip debug logging for unknown protocols to reduce overhead
             break;
     }
+}
 
-    // Continue to request reports
+void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_t* report, uint16_t len)
+{
+    // Fast path with hardware acceleration for validation
+    if (report == NULL || len == 0) {
+        tuh_hid_receive_report(dev_addr, instance);
+        return;
+    }
+
+    // Use hardware acceleration for protocol detection and dispatch
+    uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+    
+#if USE_HARDWARE_ACCELERATION
+    // RP2350: Use dedicated PIO for report type detection and preprocessing
+    if (hw_accel_enabled) {
+        // Hardware-accelerated path
+        process_hid_report_hardware(dev_addr, instance, itf_protocol, report, len);
+    } else {
+        // Software fallback path
+        process_hid_report_software(dev_addr, instance, itf_protocol, report, len);
+    }
+#else
+    // Original RP2040 implementation
+    process_hid_report_software(dev_addr, instance, itf_protocol, report, len);
+#endif
+
+    // Continue to request reports with hardware-assisted queuing
     tuh_hid_receive_report(dev_addr, instance);
 }

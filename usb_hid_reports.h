@@ -9,6 +9,13 @@
 #include "usb_hid_types.h"
 #include "class/hid/hid.h"
 
+// Hardware platform detection
+#if defined(RP2350) || defined(CORTEX_M33)
+#define USE_HARDWARE_ACCELERATION 1
+#else
+#define USE_HARDWARE_ACCELERATION 0
+#endif
+
 // Report processing functions
 void process_kbd_report(const hid_keyboard_report_t* report);
 void process_mouse_report(const hid_mouse_report_t* report);

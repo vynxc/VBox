@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 #include "tusb.h"
+#include "usb_hid_types.h"
+#include "usb_hid_reports.h"
 
 //--------------------------------------------------------------------+
 // CALLBACK FUNCTION PROTOTYPES
@@ -31,5 +33,23 @@ void tuh_umount_cb(uint8_t dev_addr);
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len);
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance);
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len);
+
+//--------------------------------------------------------------------+
+// HARDWARE ACCELERATION FUNCTION PROTOTYPES
+//--------------------------------------------------------------------+
+
+#if USE_HARDWARE_ACCELERATION
+// Hardware-accelerated report processing functions
+void process_hid_report_hardware(uint8_t dev_addr, uint8_t instance, uint8_t itf_protocol, uint8_t const* report, uint16_t len);
+
+// Hardware-accelerated protocol detection
+uint8_t hw_detect_protocol(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len);
+
+// Hardware-accelerated report validation
+bool hw_validate_report(uint8_t itf_protocol, uint8_t const* report, uint16_t len);
+#endif
+
+// Software fallback functions
+void process_hid_report_software(uint8_t dev_addr, uint8_t instance, uint8_t itf_protocol, uint8_t const* report, uint16_t len);
 
 #endif // USB_HID_CALLBACKS_H

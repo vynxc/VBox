@@ -55,22 +55,30 @@ typedef struct {
     bool strings_updated;
 } device_connection_state_t;
 
-// Performance statistics with better organization
+// HID statistics structure
 typedef struct {
     uint32_t mouse_reports_received;
     uint32_t mouse_reports_forwarded;
     uint32_t keyboard_reports_received;
     uint32_t keyboard_reports_forwarded;
     uint32_t forwarding_errors;
-} performance_stats_t;
-
-// Public stats structure
-typedef struct {
-    uint32_t mouse_reports_received;
-    uint32_t mouse_reports_forwarded;
-    uint32_t keyboard_reports_received;
-    uint32_t keyboard_reports_forwarded;
-    uint32_t forwarding_errors;
+    
+#if defined(RP2350)
+    // RP2350 hardware acceleration statistics
+    uint32_t hw_accel_reports_processed;
+    uint32_t sw_fallback_reports_processed;
+    uint32_t hw_accel_errors;
+    uint64_t hw_processing_time_us;  // Cumulative processing time in microseconds
+    uint64_t sw_processing_time_us;  // Cumulative processing time in microseconds
+    uint32_t hw_processing_count;    // Number of measurements
+    uint32_t sw_processing_count;    // Number of measurements
+    float hw_accel_success_rate;     // Success rate (calculated on retrieval)
+    float hw_avg_processing_time_us; // Average hardware processing time (calculated on retrieval)
+    float sw_avg_processing_time_us; // Average software processing time (calculated on retrieval)
+#endif
 } hid_stats_t;
+
+// Internal performance stats (alias to hid_stats_t for backward compatibility)
+typedef hid_stats_t performance_stats_t;
 
 #endif // USB_HID_TYPES_H

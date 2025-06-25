@@ -29,13 +29,13 @@
 
 // IMPROVED: Enable debugging for descriptor issues
 #ifndef CFG_TUSB_DEBUG
-#define CFG_TUSB_DEBUG            2
+#define CFG_TUSB_DEBUG            0  // Disable debug output
 #endif
 
-// IMPROVED: Enable some logging to help debug descriptor issues
-#define CFG_TUSB_DEBUG_PRINTF     1
-#define CFG_TUD_LOG_LEVEL         1  // Minimal device logging
-#define CFG_TUH_LOG_LEVEL         2  // More host logging for debugging
+// IMPROVED: Disable logging for production use
+#define CFG_TUSB_DEBUG_PRINTF     printf
+#define CFG_TUD_LOG_LEVEL         0  // Disable device logging
+#define CFG_TUH_LOG_LEVEL         0  // Disable host logging
 
 /* USB DMA on some MCUs can only access a specific SRAM region with restriction on alignment.
  * Tinyusb use follows macros to declare transferring memory so that they can be put
@@ -134,10 +134,10 @@
 #ifdef DEBUG_DESCRIPTORS
     #undef CFG_TUD_LOG_LEVEL
     #undef CFG_TUH_LOG_LEVEL
-    #define CFG_TUD_LOG_LEVEL     2
-    #define CFG_TUH_LOG_LEVEL     3    // Maximum logging for debugging
+    #define CFG_TUD_LOG_LEVEL     0    // Disable device logging even in debug mode
+    #define CFG_TUH_LOG_LEVEL     0    // Disable host logging even in debug mode
     
-    #define CFG_TUSB_DEBUG_PRINTF 1
+    #define CFG_TUSB_DEBUG_PRINTF printf
 #endif
 
 #ifdef __cplusplus
