@@ -186,6 +186,7 @@
 #define SERIAL_STRING_BUFFER_SIZE       17      // 16 chars + null terminator
 #define SERIAL_HEX_CHARS_PER_BYTE       2       // 2 hex characters per byte
 #define SERIAL_SNPRINTF_BUFFER_SIZE     3       // Buffer size for snprintf formatting
+#define USB_STRING_BUFFER_SIZE          64      // Buffer size for USB string descriptors
 
 //--------------------------------------------------------------------+
 // STRING DESCRIPTOR PROCESSING

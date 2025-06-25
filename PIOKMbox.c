@@ -109,22 +109,35 @@ typedef struct {
 
 
 static void core1_main(void) {
-    // Small delay to let core0 stabilize
-    sleep_ms(10);
+    // EXTENDED delay for cold boot - core1 needs more time
+    sleep_ms(100);  // Increase from 10ms
     
-    // CRITICAL: Configure PIO USB BEFORE tuh_init() - this is the key!
+    printf("Core1: Starting USB host initialization (cold boot)...\n");
+    
+    // Add heartbeat early to prevent watchdog timeout during init
+    watchdog_core1_heartbeat();
+    
+    // CRITICAL: Configure PIO USB BEFORE tuh_init()
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = PIN_USB_HOST_DP;
     pio_cfg.pinout = PIO_USB_PINOUT_DPDM;
     
     // Configure host stack with PIO USB configuration
-    tuh_configure(USB_HOST_PORT, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
+    if (!tuh_configure(USB_HOST_PORT, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg)) {
+        printf("Core1: CRITICAL - PIO USB configure failed\n");
+        // Don't return - continue with limited functionality
+    }
     
     // Initialize host stack on core1
-    tuh_init(USB_HOST_PORT);
+    if (!tuh_init(USB_HOST_PORT)) {
+        printf("Core1: CRITICAL - USB host init failed\n");
+        // Don't return - continue with limited functionality
+    }
     
     // Mark host as initialized
     usb_host_mark_initialized();
+    
+    printf("Core1: USB host initialization complete\n");
     
     // Start the main host task loop
     core1_task_loop();
@@ -160,7 +173,8 @@ static bool initialize_system(void) {
     stdio_init_all();
     
     // Add extended startup delay for cold boot stability
-    sleep_ms(200);
+    // Use the proper constant from defines.h instead of hardcoded value
+    sleep_ms(COLD_BOOT_STABILIZATION_MS);
     
     printf("PICO PIO KMBox - Starting initialization...\n");
     printf("Neopixel pins initialized (power OFF for cold boot stability)\n");
@@ -389,53 +403,87 @@ static void main_application_loop(void) {
 //--------------------------------------------------------------------+
 
 int main(void) {
-    // Follow the working example pattern closely
-    
-    // Set system clock to 120MHz (required for PIO USB)
-    set_sys_clock_khz(120000, true);
-    
-    // Small delay for clock stabilization
-    sleep_ms(10);
-    
-    // Initialize basic GPIO
+    // CRITICAL: Basic GPIO setup FIRST, before any delays
     gpio_init(PIN_USB_5V);
     gpio_set_dir(PIN_USB_5V, GPIO_OUT);
-    gpio_put(PIN_USB_5V, 0);  // Keep USB power OFF initially
+    gpio_put(PIN_USB_5V, 0);  // Keep USB power OFF during entire boot
     
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
-    gpio_put(PIN_LED, 1);  // Turn on LED
+    gpio_put(PIN_LED, 1);  // Turn on LED early for status
     
-    printf("=== PIOKMBox Starting ===\n");
+    // EXTENDED cold boot stabilization - this is critical!
+    sleep_ms(COLD_BOOT_STABILIZATION_MS);  // Should be 2000ms or more
     
-    // Initialize system components
+    // Set system clock with proper stabilization
+    printf("Setting system clock...\n");  // Basic printf should work with default clock
+    if (!set_sys_clock_khz(120000, true)) {
+        // Clock setting failed - try to continue with default clock
+        printf("WARNING: Failed to set 120MHz clock, continuing with default\n");
+    }
+    
+    // CRITICAL: Extended delay after clock change for cold boot
+    sleep_ms(200);  // Let clock fully stabilize
+    
+    // Re-initialize stdio after clock change
+    stdio_init_all();
+    
+    // Additional delay for UART stabilization after clock change
+    sleep_ms(100);
+    
+    printf("=== PIOKMBox Starting (Cold Boot Enhanced) ===\n");
+    printf("USB power held LOW during boot for stability\n");
+    
+    // Initialize system components with more conservative timing
     if (!initialize_system()) {
         printf("CRITICAL: System initialization failed\n");
         return -1;
     }
     
-    // Enable USB host power
-    usb_host_enable_power();
-    sleep_ms(100);  // Brief power stabilization
+    // Additional hardware-specific delay for problematic hardware revisions
+    #if REQUIRES_EXTENDED_BOOT_DELAY
+    printf("Hardware revision %d requires extended boot delay...\n", HARDWARE_REVISION);
+    sleep_ms(USB_POWER_STABILIZATION_MS);
+    #else
+    // Even "good" hardware needs some delay for cold boot
+    sleep_ms(1000);
+    #endif
     
-    // Launch core1 first (like the working example)
-    printf("Launching core1 for USB host...\n");
-    multicore_reset_core1();
-    multicore_launch_core1(core1_main);
-    
-    // Initialize device stack on core0 (like the working example)
+    // Initialize USB device stack BEFORE enabling host power
     printf("Initializing USB device stack on core0...\n");
     if (!initialize_usb_device()) {
         printf("CRITICAL: USB Device initialization failed\n");
         return -1;
     }
     
+    // Let device stack fully initialize
+    sleep_ms(500);
+    
+    // NOW enable USB host power with extended stabilization
+    printf("Enabling USB host power...\n");
+    usb_host_enable_power();
+    
+    // CRITICAL: Extended delay after power enable for cold boot
+    sleep_ms(1000);  // Much longer for cold boot reliability
+    
+    // Launch core1 with additional delay after power stabilization
+    printf("Launching core1 for USB host...\n");
+    multicore_reset_core1();
+    multicore_launch_core1(core1_main);
+    
+    // Give core1 time to initialize before proceeding
+    sleep_ms(500);
+    
     // Initialize remaining systems
+    printf("Starting watchdog and final systems...\n");
     watchdog_init();
     watchdog_start();
+    
+    // Enable neopixel power last
+    sleep_ms(500);
     neopixel_enable_power();
     
-    printf("=== PIOKMBox Ready ===\n");
+    printf("=== PIOKMBox Ready (Cold Boot Complete) ===\n");
     
     // Enter main application loop
     main_application_loop();

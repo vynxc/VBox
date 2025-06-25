@@ -1,12 +1,24 @@
 /*
- * Hurricane PIOKMBox Firmware
-*/
+ * Hurricane PIOKMBox Firmware - LED Control Module
+ * 
+ * THREAD SAFETY:
+ * This module uses Pico SDK critical sections to ensure thread-safe access
+ * to the LED controller state when running on dual cores. All public functions
+ * that modify shared state acquire/release the critical section lock.
+ * 
+ * The locking strategy:
+ * - Use critical_section_enter_blocking() for atomic access to controller state
+ * - Keep critical sections as short as possible to minimize blocking time
+ * - GPIO and PIO operations are performed outside critical sections when possible
+ * - Hardware operations (GPIO, PIO) are inherently atomic at the hardware level
+ */
 
 
 #include "led_control.h"
 #include "usb_hid.h"
 #include "defines.h"
 #include "pico/stdlib.h"
+#include "pico/critical_section.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "ws2812.pio.h"
@@ -14,12 +26,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-//--------------------------------------------------------------------+
-// CONSTANTS AND CONFIGURATION
-//--------------------------------------------------------------------+
-
-// All timing, brightness, and configuration constants are now in defines.h
 
 //--------------------------------------------------------------------+
 // TYPE DEFINITIONS
@@ -60,6 +66,14 @@ typedef struct {
 } led_controller_t;
 
 /**
+ * @brief Thread-safe LED system structure with critical section protection
+ */
+typedef struct {
+    led_controller_t controller;
+    critical_section_t access_lock;  // Pico SDK critical section for dual-core safety
+} led_system_t;
+
+/**
  * @brief Status configuration structure
  */
 typedef struct {
@@ -72,21 +86,24 @@ typedef struct {
 // PRIVATE VARIABLES
 //--------------------------------------------------------------------+
 
-static led_controller_t g_led_controller = {
-    .initialized = false,
-    .pio_instance = pio1,
-    .state_machine = 0,
-    .current_status = STATUS_BOOTING,
-    .status_override = STATUS_BOOTING,
-    .status_override_active = false,
-    .boot_start_time = 0,
-    .activity_flash_active = false,
-    .caps_lock_flash_active = false,
-    .breathing_enabled = false,
-    .current_brightness = MAX_BRIGHTNESS,
-    .blink_interval_ms = DEFAULT_BLINK_INTERVAL_MS,
-    .last_blink_time = 0,
-    .led_state = false
+static led_system_t g_led_system = {
+    .controller = {
+        .initialized = false,
+        .pio_instance = pio1,
+        .state_machine = 0,
+        .current_status = STATUS_BOOTING,
+        .status_override = STATUS_BOOTING,
+        .status_override_active = false,
+        .boot_start_time = 0,
+        .activity_flash_active = false,
+        .caps_lock_flash_active = false,
+        .breathing_enabled = true,
+        .current_brightness = MAX_BRIGHTNESS,
+        .blink_interval_ms = DEFAULT_BLINK_INTERVAL_MS,
+        .last_blink_time = 0,
+        .led_state = false
+    }
+    // Critical section will be initialized in neopixel_init()
 };
 
 // Status configuration lookup table
@@ -109,6 +126,8 @@ static const status_config_t g_status_configs[] = {
 // PRIVATE FUNCTION DECLARATIONS
 //--------------------------------------------------------------------+
 
+static void led_lock_acquire(void);
+static void led_lock_release(void);
 static bool validate_brightness(float brightness);
 static bool validate_color(uint32_t color);
 static bool validate_status(system_status_t status);
@@ -121,6 +140,30 @@ static void handle_activity_flash(void);
 static void handle_caps_lock_flash(void);
 static void handle_breathing_effect(void);
 static void log_status_change(system_status_t status, uint32_t color, bool breathing);
+
+//--------------------------------------------------------------------+
+// CRITICAL SECTION FUNCTIONS
+//--------------------------------------------------------------------+
+
+// Convenience macro for accessing the LED controller
+#define g_led_controller (g_led_system.controller)
+
+/**
+ * @brief Acquire critical section for thread-safe access to LED system
+ * @note This uses Pico SDK critical sections for dual-core safety
+ */
+static void led_lock_acquire(void)
+{
+    critical_section_enter_blocking(&g_led_system.access_lock);
+}
+
+/**
+ * @brief Release critical section after LED system access
+ */
+static void led_lock_release(void)
+{
+    critical_section_exit(&g_led_system.access_lock);
+}
 
 //--------------------------------------------------------------------+
 // UTILITY FUNCTIONS
@@ -172,8 +215,11 @@ static bool is_time_elapsed(uint32_t start_time, uint32_t duration_ms)
 
 void led_blinking_task(void)
 {
+    led_lock_acquire();
+    
     // Skip if blinking is disabled
     if (g_led_controller.blink_interval_ms == 0) {
+        led_lock_release();
         return;
     }
 
@@ -181,23 +227,32 @@ void led_blinking_task(void)
     
     // Check if it's time to toggle
     if (!is_time_elapsed(g_led_controller.last_blink_time, g_led_controller.blink_interval_ms)) {
+        led_lock_release();
         return;
     }
 
     // Update timing and toggle LED
     g_led_controller.last_blink_time = current_time;
     g_led_controller.led_state = !g_led_controller.led_state;
+    
+    led_lock_release();
+    
+    // GPIO operations don't need locking as they're atomic
     gpio_put(PIN_LED, g_led_controller.led_state);
 }
 
 void led_set_blink_interval(uint32_t interval_ms)
 {
+    led_lock_acquire();
+    
     g_led_controller.blink_interval_ms = interval_ms;
     
     // Reset timing when interval changes
     if (interval_ms > 0) {
         g_led_controller.last_blink_time = get_current_time_ms();
     }
+    
+    led_lock_release();
 }
 
 //--------------------------------------------------------------------+
@@ -206,13 +261,21 @@ void led_set_blink_interval(uint32_t interval_ms)
 
 void neopixel_init(void)
 {
+    // Initialize critical section first (this is safe to call multiple times)
+    critical_section_init(&g_led_system.access_lock);
+    
+    led_lock_acquire();
+    
     // Prevent double initialization
     if (g_led_controller.initialized) {
+        led_lock_release();
         printf("Warning: Neopixel already initialized\n");
         return;
     }
+    
+    led_lock_release();
 
-    // Initialize LED pin
+    // Initialize LED pin (GPIO operations are atomic)
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
     gpio_put(PIN_LED, 0);
@@ -227,22 +290,30 @@ void neopixel_init(void)
 
 void neopixel_enable_power(void)
 {
+    led_lock_acquire();
+    
     if (g_led_controller.initialized) {
+        led_lock_release();
         printf("Warning: Neopixel already fully initialized\n");
         return;
     }
 
     printf("Enabling neopixel power...\n");
     
-    // Enable neopixel power
+    led_lock_release();
+    
+    // Enable neopixel power (GPIO operation is atomic)
     gpio_put(NEOPIXEL_POWER, 1);
 
     // Allow power to stabilize
     sleep_ms(POWER_STABILIZATION_DELAY_MS);
 
+    led_lock_acquire();
+
     // Load WS2812 program into PIO
     uint offset = pio_add_program(g_led_controller.pio_instance, &ws2812_program);
     if (offset == (uint)-1) {
+        led_lock_release();
         printf("Error: Failed to load WS2812 program into PIO\n");
         return;
     }
@@ -258,6 +329,8 @@ void neopixel_enable_power(void)
     // Mark as initialized and set initial state
     g_led_controller.initialized = true;
     g_led_controller.boot_start_time = get_current_time_ms();
+    
+    led_lock_release();
     
     // Set initial color
     neopixel_set_color(COLOR_BOOTING);
@@ -298,11 +371,15 @@ void neopixel_set_color(uint32_t color)
 
 void neopixel_set_color_with_brightness(uint32_t color, float brightness)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
 
     if (!validate_color(color) || !validate_brightness(brightness)) {
+        led_lock_release();
         printf("Warning: Invalid color (0x%06lX) or brightness (%.2f)\n", 
                (unsigned long)color, brightness);
         return;
@@ -312,10 +389,14 @@ void neopixel_set_color_with_brightness(uint32_t color, float brightness)
     const uint32_t dimmed_color = neopixel_apply_brightness(color, brightness);
     const uint32_t grb_color = neopixel_rgb_to_grb(dimmed_color);
     
-    // Send to PIO state machine
-    pio_sm_put_blocking(g_led_controller.pio_instance, 
-                       g_led_controller.state_machine, 
-                       grb_color << WS2812_RGB_SHIFT);
+    // Cache PIO instance and state machine for atomic access
+    PIO pio_inst = g_led_controller.pio_instance;
+    uint sm = g_led_controller.state_machine;
+    
+    led_lock_release();
+    
+    // Send to PIO state machine (PIO operations are hardware-atomic)
+    pio_sm_put_blocking(pio_inst, sm, grb_color << WS2812_RGB_SHIFT);
 }
 
 //--------------------------------------------------------------------+
@@ -330,6 +411,8 @@ void neopixel_breathing_effect(void)
 static void update_breathing_brightness(void)
 {
     const uint32_t current_time = get_current_time_ms();
+    
+    led_lock_acquire();
     
     // Initialize breathing start time if needed
     if (g_led_controller.breathing_start_time == 0) {
@@ -359,6 +442,8 @@ static void update_breathing_brightness(void)
     g_led_controller.current_brightness = BREATHING_MIN_BRIGHTNESS + 
         (BREATHING_MAX_BRIGHTNESS - BREATHING_MIN_BRIGHTNESS) * 
         sinf(progress * (float)M_PI / 2.0f);
+        
+    led_lock_release();
 }
 
 //--------------------------------------------------------------------+
@@ -367,11 +452,13 @@ static void update_breathing_brightness(void)
 
 static system_status_t determine_system_status(void)
 {
-    // Check for suspended state first
+    // Check for suspended state first (this is external state, no lock needed)
     if (tud_suspended()) {
         return STATUS_SUSPENDED;
     }
 
+    led_lock_acquire();
+    
     // Check boot timeout first - if we've been running long enough, we should exit boot status
     if (g_led_controller.boot_start_time == 0) {
         g_led_controller.boot_start_time = get_current_time_ms();
@@ -379,8 +466,11 @@ static system_status_t determine_system_status(void)
 
     // If still in boot timeout, stay in booting status
     if (!is_time_elapsed(g_led_controller.boot_start_time, BOOT_TIMEOUT_MS)) {
+        led_lock_release();
         return STATUS_BOOTING;
     }
+    
+    led_lock_release();
 
     // After boot timeout, determine actual status based on USB connections
     const bool device_mounted = tud_mounted();
@@ -441,13 +531,20 @@ static void apply_status_change(system_status_t new_status)
 
     const status_config_t* config = &g_status_configs[new_status];
     
+    led_lock_acquire();
+    
     g_led_controller.current_status = new_status;
     g_led_controller.breathing_enabled = config->breathing_effect;
     
     // Reset breathing timing when status changes
     if (g_led_controller.breathing_enabled) {
         g_led_controller.breathing_start_time = 0;
-    } else {
+    }
+    
+    led_lock_release();
+    
+    // Set color outside the lock to avoid nested locking
+    if (!g_led_controller.breathing_enabled) {
         neopixel_set_color(config->color);
     }
 
@@ -458,7 +555,11 @@ void neopixel_update_status(void)
 {
     const system_status_t new_status = determine_system_status();
     
-    if (new_status != g_led_controller.current_status) {
+    led_lock_acquire();
+    system_status_t current_status = g_led_controller.current_status;
+    led_lock_release();
+    
+    if (new_status != current_status) {
         apply_status_change(new_status);
     }
 }
@@ -481,40 +582,62 @@ static void log_status_change(system_status_t status, uint32_t color, bool breat
 
 static void handle_activity_flash(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.activity_flash_active) {
+        led_lock_release();
         return;
     }
 
     if (is_time_elapsed(g_led_controller.activity_flash_start_time, ACTIVITY_FLASH_DURATION_MS)) {
         g_led_controller.activity_flash_active = false;
+        led_lock_release();
         // Return to normal status display will happen in main task
     } else {
-        neopixel_set_color(g_led_controller.activity_flash_color);
+        uint32_t flash_color = g_led_controller.activity_flash_color;
+        led_lock_release();
+        neopixel_set_color(flash_color);
     }
 }
 
 static void handle_caps_lock_flash(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.caps_lock_flash_active) {
+        led_lock_release();
         return;
     }
 
     if (is_time_elapsed(g_led_controller.caps_lock_flash_start_time, ACTIVITY_FLASH_DURATION_MS)) {
         g_led_controller.caps_lock_flash_active = false;
+        led_lock_release();
         // Return to normal status display will happen in main task
+    } else {
+        led_lock_release();
     }
 }
 
 static void handle_breathing_effect(void)
 {
-    if (!g_led_controller.breathing_enabled) {
+    led_lock_acquire();
+    bool breathing_enabled = g_led_controller.breathing_enabled;
+    system_status_t current_status = g_led_controller.current_status;
+    led_lock_release();
+    
+    if (!breathing_enabled) {
         return;
     }
 
     neopixel_breathing_effect();
     
-    const status_config_t* config = &g_status_configs[g_led_controller.current_status];
-    neopixel_set_color_with_brightness(config->color, g_led_controller.current_brightness);
+    const status_config_t* config = &g_status_configs[current_status];
+    
+    led_lock_acquire();
+    float brightness = g_led_controller.current_brightness;
+    led_lock_release();
+    
+    neopixel_set_color_with_brightness(config->color, brightness);
 }
 
 void neopixel_status_task(void)
@@ -527,10 +650,18 @@ void neopixel_status_task(void)
     }
     last_update_time = get_current_time_ms();
 
+    led_lock_acquire();
+    bool status_override_active = g_led_controller.status_override_active;
+    system_status_t status_override = g_led_controller.status_override;
+    system_status_t current_status = g_led_controller.current_status;
+    bool activity_flash_active = g_led_controller.activity_flash_active;
+    bool caps_lock_flash_active = g_led_controller.caps_lock_flash_active;
+    led_lock_release();
+
     // Use override status if active, otherwise update normally
-    if (g_led_controller.status_override_active) {
-        if (g_led_controller.current_status != g_led_controller.status_override) {
-            apply_status_change(g_led_controller.status_override);
+    if (status_override_active) {
+        if (current_status != status_override) {
+            apply_status_change(status_override);
         }
     } else {
         neopixel_update_status();
@@ -541,7 +672,7 @@ void neopixel_status_task(void)
     handle_caps_lock_flash();
     
     // Only show breathing effect if no flashes are active
-    if (!g_led_controller.activity_flash_active && !g_led_controller.caps_lock_flash_active) {
+    if (!activity_flash_active && !caps_lock_flash_active) {
         handle_breathing_effect();
     }
 }
@@ -552,13 +683,18 @@ void neopixel_status_task(void)
 
 static void trigger_activity_flash_internal(uint32_t color)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized || !validate_color(color)) {
+        led_lock_release();
         return;
     }
 
     g_led_controller.activity_flash_active = true;
     g_led_controller.activity_flash_start_time = get_current_time_ms();
     g_led_controller.activity_flash_color = color;
+    
+    led_lock_release();
 }
 
 void neopixel_trigger_activity_flash(void)
@@ -588,12 +724,17 @@ void neopixel_trigger_usb_disconnection_flash(void)
 
 void neopixel_trigger_caps_lock_flash(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
 
     g_led_controller.caps_lock_flash_active = true;
     g_led_controller.caps_lock_flash_start_time = get_current_time_ms();
+    
+    led_lock_release();
 }
 
 //--------------------------------------------------------------------+
@@ -602,9 +743,14 @@ void neopixel_trigger_caps_lock_flash(void)
 
 void neopixel_trigger_usb_reset_pending(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
+    
+    led_lock_release();
 
     neopixel_set_status_override(STATUS_USB_RESET_PENDING);
     printf("Neopixel: USB reset pending status activated\n");
@@ -612,9 +758,14 @@ void neopixel_trigger_usb_reset_pending(void)
 
 void neopixel_trigger_usb_reset_success(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
+    
+    led_lock_release();
 
     // Clear any status override first
     neopixel_clear_status_override();
@@ -627,9 +778,14 @@ void neopixel_trigger_usb_reset_success(void)
 
 void neopixel_trigger_usb_reset_failed(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
+    
+    led_lock_release();
 
     neopixel_set_status_override(STATUS_USB_RESET_FAILED);
     printf("Neopixel: USB reset failed status activated\n");
@@ -641,23 +797,34 @@ void neopixel_trigger_usb_reset_failed(void)
 
 void neopixel_set_status_override(system_status_t status)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized || !validate_status(status)) {
+        led_lock_release();
         printf("Error: Cannot set status override - invalid status %d\n", status);
         return;
     }
 
     g_led_controller.status_override = status;
     g_led_controller.status_override_active = true;
+    
+    led_lock_release();
 
     printf("Neopixel: Status override set to %s\n", g_status_configs[status].name);
 }
 
 void neopixel_clear_status_override(void)
 {
+    led_lock_acquire();
+    
     if (!g_led_controller.initialized) {
+        led_lock_release();
         return;
     }
 
     g_led_controller.status_override_active = false;
+    
+    led_lock_release();
+    
     printf("Neopixel: Status override cleared\n");
 }

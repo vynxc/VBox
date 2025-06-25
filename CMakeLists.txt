@@ -39,6 +39,14 @@ add_executable(PIOKMbox
     PIOKMbox.c
     led_control.c
     usb_hid.c
+    usb_hid_init.c
+    usb_hid_device.c
+    usb_hid_host.c
+    usb_hid_reports.c
+    usb_hid_descriptors.c
+    usb_hid_strings.c
+    usb_hid_callbacks.c
+    usb_hid_stats.c
     watchdog.c
     init_state_machine.c
     state_management.c
