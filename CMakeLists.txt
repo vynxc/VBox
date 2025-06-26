@@ -95,6 +95,7 @@ set(PROJECT_SOURCES
     watchdog.c
     init_state_machine.c
     state_management.c
+    dma_manager.c
 )
 
 # Add executable
@@ -141,6 +142,7 @@ set(COMMON_DEFINITIONS
     BUILD_CONFIG=BUILD_CONFIG_DEVELOPMENT
     PIO_USB_AVAILABLE=1
     CFG_TUH_RPI_PIO_USB=1
+    USE_DMA_MANAGER=1
 )
 
 
@@ -154,6 +156,7 @@ if(TARGET_CHIP STREQUAL "RP2350")
         PICO_RP2350=1
         PIN_USB_HOST_DP=10
         PIN_USB_HOST_DM=11
+        USE_HARDWARE_ACCELERATION=1
     )
     message(STATUS "Added RP2350-specific definitions")
 else()
