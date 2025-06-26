@@ -6,13 +6,10 @@
 #include "defines.h"
 #include "led_control.h"
 #include <stdio.h>
-#include <string.h>
-#include "hardware/dma.h"
-#include "hardware/irq.h"
-#include "hardware/sync.h"
-#include "tusb.h"
-#include "device/usbd.h"
-#include "class/hid/hid_device.h"
+
+#ifdef RP2350
+#include "rp2350_hw_accel.h"
+#endif
 
 // External declarations for variables defined in other modules
 extern performance_stats_t stats;
@@ -20,17 +17,12 @@ extern performance_stats_t stats;
 // Forward declarations for static functions
 static bool process_keyboard_report_internal(const hid_keyboard_report_t* report);
 static bool process_mouse_report_internal(const hid_mouse_report_t* report);
-static void dma_kbd_irq_handler(void);
-static void dma_mouse_irq_handler(void);
-static bool enqueue_kbd_report(const hid_keyboard_report_t* report);
-static bool enqueue_mouse_report(const hid_mouse_report_t* report);
-static bool dequeue_and_process_kbd_report(void);
-static bool dequeue_and_process_mouse_report(void);
 
-#if USE_HARDWARE_ACCELERATION
+#ifdef RP2350
 // RP2350 hardware-accelerated implementations
-static bool process_keyboard_report_internal_m33(const hid_keyboard_report_t* report);
-static bool process_mouse_report_internal_m33(const hid_mouse_report_t* report);
+extern bool hw_accel_process_keyboard_report(const hid_keyboard_report_t* report);
+extern bool hw_accel_process_mouse_report(const hid_mouse_report_t* report);
+extern bool hw_accel_is_enabled(void);
 #endif
 
 // Word-aligned circular buffers for DMA transfers
@@ -148,8 +140,30 @@ void process_kbd_report(const hid_keyboard_report_t* report)
         neopixel_trigger_keyboard_activity();
     }
     
-    // Queue the report to the circular buffer
-    if (enqueue_kbd_report(report)) {
+    // Skip key press processing for console output to improve performance
+    // Only forward the report for maximum speed
+    
+    // Fast forward the report using hardware acceleration if available
+#ifdef RP2350
+    if (hw_accel_is_enabled() && hw_accel_process_keyboard_report(report)) {
+        stats.keyboard_reports_received++;
+        
+#ifdef RP2350
+        // Update RP2350 hardware acceleration statistics
+        stats.hw_accel_reports_processed++;
+#endif
+    } else {
+        if (process_keyboard_report_internal(report)) {
+            stats.keyboard_reports_received++;
+            
+#ifdef RP2350
+            // Update RP2350 software fallback statistics
+            stats.sw_fallback_reports_processed++;
+#endif
+        }
+    }
+#else
+    if (process_keyboard_report_internal(report)) {
         stats.keyboard_reports_received++;
     }
 }
@@ -167,205 +181,24 @@ void process_mouse_report(const hid_mouse_report_t* report)
         neopixel_trigger_mouse_activity();
     }
     
-    // Queue the report to the circular buffer
-    if (enqueue_mouse_report(report)) {
+    // Fast forward the report using hardware acceleration if available
+#ifdef RP2350
+    if (hw_accel_is_enabled() && hw_accel_process_mouse_report(report)) {
         stats.mouse_reports_received++;
-    }
-}
-
-// Process queued reports from main loop
-void process_queued_reports(void) {
-    // Process keyboard reports if available
-    if (!is_kbd_buffer_empty()) {
-        dequeue_and_process_kbd_report();
-    }
-    
-    // Process mouse reports if available
-    if (!is_mouse_buffer_empty()) {
-        dequeue_and_process_mouse_report();
-    }
-}
-
-// Check if keyboard buffer is empty
-bool is_kbd_buffer_empty(void) {
-    uint32_t save = spin_lock_blocking(kbd_spinlock);
-    bool empty = (kbd_circular_buffer.read_idx == kbd_circular_buffer.write_idx);
-    spin_unlock(kbd_spinlock, save);
-    return empty;
-}
-
-// Check if mouse buffer is empty
-bool is_mouse_buffer_empty(void) {
-    uint32_t save = spin_lock_blocking(mouse_spinlock);
-    bool empty = (mouse_circular_buffer.read_idx == mouse_circular_buffer.write_idx);
-    spin_unlock(mouse_spinlock, save);
-    return empty;
-}
-
-// Enqueue keyboard report to circular buffer
-static bool enqueue_kbd_report(const hid_keyboard_report_t* report) {
-    uint32_t save = spin_lock_blocking(kbd_spinlock);
-    
-    // Calculate next write index
-    uint32_t next_write = (kbd_circular_buffer.write_idx + 1) & kbd_circular_buffer.mask;
-    
-    // Check if buffer is full
-    if (next_write == kbd_circular_buffer.read_idx) {
-        spin_unlock(kbd_spinlock, save);
-        stats.forwarding_errors++;
-        return false;
-    }
-    
-    // Copy report to buffer
-    memcpy(&((hid_keyboard_report_t*)kbd_circular_buffer.buffer)[kbd_circular_buffer.write_idx],
-           report,
-           sizeof(hid_keyboard_report_t));
-    
-    // Update write index
-    kbd_circular_buffer.write_idx = next_write;
-    
-    spin_unlock(kbd_spinlock, save);
-    
-    // If DMA is not active, start it
-    if (!dma_channel_is_busy(kbd_dma_channel)) {
-        dequeue_and_process_kbd_report();
-    }
-    
-    return true;
-}
-
-// Enqueue mouse report to circular buffer
-static bool enqueue_mouse_report(const hid_mouse_report_t* report) {
-    uint32_t save = spin_lock_blocking(mouse_spinlock);
-    
-    // Calculate next write index
-    uint32_t next_write = (mouse_circular_buffer.write_idx + 1) & mouse_circular_buffer.mask;
-    
-    // Check if buffer is full
-    if (next_write == mouse_circular_buffer.read_idx) {
-        spin_unlock(mouse_spinlock, save);
-        stats.forwarding_errors++;
-        return false;
-    }
-    
-    // Copy report to buffer with button validation
-    hid_mouse_report_t validated_report = *report;
-    validated_report.buttons &= 0x07; // Keep only first 3 bits (L/R/M buttons)
-    
-    memcpy(&((hid_mouse_report_t*)mouse_circular_buffer.buffer)[mouse_circular_buffer.write_idx],
-           &validated_report,
-           sizeof(hid_mouse_report_t));
-    
-    // Update write index
-    mouse_circular_buffer.write_idx = next_write;
-    
-    spin_unlock(mouse_spinlock, save);
-    
-    // If DMA is not active, start it
-    if (!dma_channel_is_busy(mouse_dma_channel)) {
-        dequeue_and_process_mouse_report();
-    }
-    
-    return true;
-}
-
-// Dequeue and process keyboard report using DMA
-static bool dequeue_and_process_kbd_report(void) {
-    uint32_t save = spin_lock_blocking(kbd_spinlock);
-    
-    // Check if buffer is empty
-    if (kbd_circular_buffer.read_idx == kbd_circular_buffer.write_idx) {
-        spin_unlock(kbd_spinlock, save);
-        return false;
-    }
-    
-    // Get report from buffer
-    hid_keyboard_report_t* report = &((hid_keyboard_report_t*)kbd_circular_buffer.buffer)[kbd_circular_buffer.read_idx];
-    
-    // Set up DMA transfer
-    dma_channel_set_read_addr(kbd_dma_channel, report, false);
-    
-    // Start DMA transfer
-    dma_channel_set_trans_count(kbd_dma_channel, sizeof(hid_keyboard_report_t) / 4, false);
-    dma_channel_set_write_addr(kbd_dma_channel, &report, true); // Start transfer
-    
-    // Update read index
-    kbd_circular_buffer.read_idx = (kbd_circular_buffer.read_idx + 1) & kbd_circular_buffer.mask;
-    
-    spin_unlock(kbd_spinlock, save);
-    return true;
-}
-
-// Dequeue and process mouse report using DMA
-static bool dequeue_and_process_mouse_report(void) {
-    uint32_t save = spin_lock_blocking(mouse_spinlock);
-    
-    // Check if buffer is empty
-    if (mouse_circular_buffer.read_idx == mouse_circular_buffer.write_idx) {
-        spin_unlock(mouse_spinlock, save);
-        return false;
-    }
-    
-    // Get report from buffer
-    hid_mouse_report_t* report = &((hid_mouse_report_t*)mouse_circular_buffer.buffer)[mouse_circular_buffer.read_idx];
-    
-    // Set up DMA transfer
-    dma_channel_set_read_addr(mouse_dma_channel, report, false);
-    
-    // Start DMA transfer
-    dma_channel_set_trans_count(mouse_dma_channel, sizeof(hid_mouse_report_t) / 4, false);
-    dma_channel_set_write_addr(mouse_dma_channel, &report, true); // Start transfer
-    
-    // Update read index
-    mouse_circular_buffer.read_idx = (mouse_circular_buffer.read_idx + 1) & mouse_circular_buffer.mask;
-    
-    spin_unlock(mouse_spinlock, save);
-    return true;
-}
-
-// DMA interrupt handler for keyboard reports
-static void dma_kbd_irq_handler(void) {
-    // Clear the interrupt
-    dma_hw->ints0 = 1u << kbd_dma_channel;
-    
-    // Get the report that was just transferred
-    hid_keyboard_report_t* report = (hid_keyboard_report_t*)dma_channel_hw_addr(kbd_dma_channel)->write_addr;
-    
-    // Forward the report
-#if USE_HARDWARE_ACCELERATION
-    if (process_keyboard_report_internal_m33(report)) {
-        stats.keyboard_reports_forwarded++;
-    } else {
-        stats.forwarding_errors++;
-    }
-#else
-    if (process_keyboard_report_internal(report)) {
-        stats.keyboard_reports_forwarded++;
-    } else {
-        stats.forwarding_errors++;
-    }
+        
+#ifdef RP2350
+        // Update RP2350 hardware acceleration statistics
+        stats.hw_accel_reports_processed++;
 #endif
-    
-    // Process next report if available
-    if (!is_kbd_buffer_empty()) {
-        dequeue_and_process_kbd_report();
-    }
-}
-
-// DMA interrupt handler for mouse reports
-static void dma_mouse_irq_handler(void) {
-    // Clear the interrupt
-    dma_hw->ints0 = 1u << mouse_dma_channel;
-    
-    // Get the report that was just transferred
-    hid_mouse_report_t* report = (hid_mouse_report_t*)dma_channel_hw_addr(mouse_dma_channel)->write_addr;
-    
-    // Forward the report
-#if USE_HARDWARE_ACCELERATION
-    if (process_mouse_report_internal_m33(report)) {
-        stats.mouse_reports_forwarded++;
     } else {
-        stats.forwarding_errors++;
+        if (process_mouse_report_internal(report)) {
+            stats.mouse_reports_received++;
+            
+#ifdef RP2350
+            // Update RP2350 software fallback statistics
+            stats.sw_fallback_reports_processed++;
+#endif
+        }
     }
 #else
     if (process_mouse_report_internal(report)) {
@@ -408,56 +241,7 @@ __attribute__((unused)) static bool process_keyboard_report_internal(const hid_k
     return success;
 }
 
-#if USE_HARDWARE_ACCELERATION
-// RP2350 hardware-accelerated implementation for keyboard report processing
-static bool process_keyboard_report_internal_m33(const hid_keyboard_report_t* report)
-{
-    if (report == NULL) {
-        return false;
-    }
-    
-    // Use optimized processing for RP2350
-    // Instead of inline assembly, use direct function calls for better compatibility
-    
-    // Validate the report data
-    uint8_t modifier = report->modifier & 0xFF;  // Ensure modifier is valid (8 bits only)
-    
-    // Create a validated report
-    hid_keyboard_report_t validated_report = *report;
-    validated_report.modifier = modifier;
-    
-    // Call the TinyUSB function directly
-    bool success = tud_hid_report(REPORT_ID_KEYBOARD, &validated_report, sizeof(hid_keyboard_report_t));
-    
-    return success;
-}
-
-// RP2350 hardware-accelerated implementation for mouse report processing
-static bool process_mouse_report_internal_m33(const hid_mouse_report_t* report)
-{
-    if (report == NULL) {
-        return false;
-    }
-    
-    // Use optimized processing for RP2350
-    // Instead of inline assembly, use direct function calls for better compatibility
-    
-    // Validate the buttons (keep only first 3 bits for L/R/M buttons)
-    uint8_t valid_buttons = report->buttons & 0x07;
-    
-    // Call the TinyUSB function directly
-    bool success = tud_hid_mouse_report(
-        REPORT_ID_MOUSE,
-        valid_buttons,
-        report->x,
-        report->y,
-        report->wheel,
-        0  // pan parameter set to 0
-    );
-    
-    return success;
-}
-#endif // USE_HARDWARE_ACCELERATION
+// Hardware acceleration implementations are now in rp2350_hw_accel.c
 
 __attribute__((unused)) static bool process_mouse_report_internal(const hid_mouse_report_t* report)
 {

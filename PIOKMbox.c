@@ -13,6 +13,14 @@
 #include "hardware/uart.h"
 #include "pico/unique_id.h"
 
+#ifdef RP2350
+#include "hardware/dma.h"
+#include "hardware/irq.h"
+#include "hardware/pio.h"
+#include "rp2350_hw_accel.h"
+#include "rp2350_dma_handler.h"
+#endif
+
 #include "tusb.h"
 #include "defines.h"
 #include "config.h"
@@ -71,7 +79,6 @@ static void core1_main(void);
 static void core1_task_loop(void);
 #ifdef RP2350
 static bool init_hid_hardware_acceleration(void);
-static void tuh_task_with_acceleration(void);
 #endif
 #endif
 
@@ -149,7 +156,25 @@ static void core1_main(void) {
     // RP2350: Initialize hardware acceleration
     hw_accel_enabled = init_hid_hardware_acceleration();
     if (hw_accel_enabled) {
-        LOG_INIT("Core1: RP2350 hardware acceleration initialized successfully");
+        printf("Core1: RP2350 hardware acceleration initialized successfully\n");
+        
+        // Initialize enhanced tuh_task implementation
+        extern bool rp2350_tuh_task_init(void);
+        extern bool rp2350_patch_tuh_task(void);
+        
+        // First initialize the enhanced implementation
+        if (rp2350_tuh_task_init()) {
+            printf("Core1: Enhanced tuh_task implementation initialized successfully\n");
+            
+            // Then patch the tuh_task function to use our enhanced implementation
+            if (rp2350_patch_tuh_task()) {
+                printf("Core1: tuh_task patched successfully\n");
+            } else {
+                printf("Core1: Failed to patch tuh_task, using direct calls\n");
+            }
+        } else {
+            printf("Core1: Enhanced tuh_task implementation initialization failed\n");
+        }
     } else {
         LOG_ERROR("Core1: RP2350 hardware acceleration initialization failed, using standard mode");
     }
@@ -168,18 +193,35 @@ static void core1_task_loop(void) {
     core1_state_t state = {0};  // Local state instead of static
 
 #ifdef RP2350
-    // RP2350: Initialize hardware acceleration
+    // RP2350: Initialize hardware acceleration if not already initialized
     if (!hw_accel_enabled) {
         hw_accel_enabled = init_hid_hardware_acceleration();
+        
+        // Initialize enhanced tuh_task implementation if hardware acceleration is enabled
+        if (hw_accel_enabled) {
+            extern bool rp2350_tuh_task_init(void);
+            extern bool rp2350_patch_tuh_task(void);
+            
+            // First initialize the enhanced implementation
+            if (rp2350_tuh_task_init()) {
+                // Then patch the tuh_task function
+                rp2350_patch_tuh_task();
+            }
+        }
     }
 #endif
 
     while (true) {
 #ifdef RP2350
-        // RP2350: Use hardware-accelerated task processing
+        // RP2350: Use enhanced tuh_task implementation directly
+        extern void rp2350_enhanced_tuh_task(void);
+        extern bool rp2350_tuh_task_hw_accel_enabled(void);
+        
         if (hw_accel_enabled) {
-            tuh_task_with_acceleration();
+            // Call our enhanced implementation directly
+            rp2350_enhanced_tuh_task();
         } else {
+            // Fall back to standard implementation
             tuh_task();
         }
 #else
@@ -269,112 +311,17 @@ static void tuh_task_minimal(void) {
 static bool init_hid_hardware_acceleration(void) {
     LOG_INIT("Initializing RP2350 hardware acceleration for USB HID...");
     
-    // Reset acceleration context
-    memset(&accel_ctx, 0, sizeof(accel_ctx));
+    // Use the implementation from rp2350_hw_accel.c
+    extern bool hw_accel_init(void);
+    bool success = hw_accel_init();
     
-    // Enable acceleration clock domain
-    clock_configure(clk_sys,
-                   CLOCKS_CLK_SYS_CTRL_SRC_VALUE_CLKSRC_CLK_SYS_AUX,
-                   CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_CLKSRC_PLL_USB,
-                   120 * MHZ, 120 * MHZ);
-    
-    // Configure hardware acceleration registers
-    uint32_t* accel_base = (uint32_t*)RP2350_HID_ACCEL_BASE;
-    accel_base[RP2350_ACCEL_CTRL] = RP2350_ACCEL_ENABLE | RP2350_ACCEL_DMA_MODE;
-    
-    // Set up dedicated DMA channels for HID processing
-    accel_ctx.hw_context = dma_manager_allocate_acceleration_channels(2);
-    if (!accel_ctx.hw_context) {
-        return false;
-    }
-    
-    accel_ctx.initialized = true;
-    accel_ctx.acceleration_mode = RP2350_ACCEL_MODE_HID_OPTIMIZED;
-    
-    return true;
-}
-
-/**
- * @brief Perform USB host task processing with hardware acceleration
- *
- * This function uses the RP2350 hardware acceleration features to process
- * USB host tasks more efficiently than the standard tuh_task() function.
- * It leverages DMA and hardware acceleration registers to offload HID processing.
- */
-static void tuh_task_with_acceleration(void) {
-    // Check if acceleration is properly initialized
-    if (!accel_ctx.initialized) {
-        // Fall back to standard processing if acceleration isn't available
-        uint64_t sw_start = time_us_64();
-        tuh_task();
-        track_sw_processing_latency(sw_start);
-        increment_sw_fallback_reports();
-        return;
-    }
-    
-    // Start performance counter for hardware acceleration
-    uint64_t hw_start = time_us_64();
-    
-    // Access acceleration hardware registers
-    uint32_t* accel_base = (uint32_t*)RP2350_HID_ACCEL_BASE;
-    
-    // Trigger hardware-accelerated processing
-    accel_base[RP2350_ACCEL_CTRL] |= RP2350_ACCEL_START_PROCESSING;
-    
-    // Wait for hardware processing to complete (with timeout)
-    uint32_t timeout = 100; // 100 microseconds timeout
-    while ((accel_base[RP2350_ACCEL_STATUS] & RP2350_ACCEL_BUSY) && timeout > 0) {
-        timeout--;
-        // Short delay
-        busy_wait_us(1);
-    }
-    
-    // Check if hardware processing completed successfully
-    if (accel_base[RP2350_ACCEL_STATUS] & RP2350_ACCEL_ERROR || timeout == 0) {
-        // Hardware encountered an error or timed out, fall back to standard processing
-        LOG_ERROR("HW acceleration error or timeout, falling back to SW processing");
-        
-        uint64_t sw_start = time_us_64();
-        tuh_task();
-        track_sw_processing_latency(sw_start);
-        
-        // Update error counter
-        accel_ctx.performance_counters[3]++;
-        increment_hw_accel_errors();
-        increment_sw_fallback_reports();
+    if (success) {
+        printf("RP2350 hardware acceleration initialized successfully\n");
     } else {
-        // Process any remaining software tasks that hardware couldn't handle
-        tuh_task_minimal();
-        
-        // Update success counter
-        accel_ctx.performance_counters[0]++;
-        increment_hw_accel_reports();
-        
-        // Track hardware processing time
-        track_hw_processing_latency(hw_start);
+        printf("RP2350 hardware acceleration initialization failed, falling back to standard mode\n");
     }
     
-    // Calculate processing time and update performance counter
-    uint32_t end_time = time_us_32();
-    uint32_t processing_time = end_time - (uint32_t)hw_start;
-    
-    // Update average processing time (simple moving average)
-    accel_ctx.performance_counters[1] =
-        (accel_ctx.performance_counters[1] * 7 + processing_time) / 8;
-    
-    // Update max processing time
-    if (processing_time > accel_ctx.performance_counters[2]) {
-        accel_ctx.performance_counters[2] = processing_time;
-    }
-    
-    // Periodically print hardware acceleration statistics (every 1000 calls)
-    static uint32_t stats_counter = 0;
-    if (++stats_counter >= 1000) {
-        #if ENABLE_STATS_LOGGING
-        print_hw_accel_stats();
-        #endif
-        stats_counter = 0;
-    }
+    return success;
 }
 #endif // RP2350
 
