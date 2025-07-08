@@ -19,21 +19,18 @@
 #ifndef PIN_USB_HOST_DM
 #define PIN_USB_HOST_DM         (17u)   // PIO USB Host D- pin
 #endif
-#ifndef PIN_BUTTON
 #define PIN_BUTTON              (7u)    // Reset button pin
-#endif
-#ifndef PIN_USB_5V
 #define PIN_USB_5V              (18u)   // Power pin for USB host
-#endif
-#ifndef PIN_LED
 #define PIN_LED                 (13u)   // Status LED pin
-#endif
-#ifndef PIN_NEOPIXEL
 #define PIN_NEOPIXEL            (21u)   // Neopixel data pin
-#endif
-#ifndef NEOPIXEL_POWER
 #define NEOPIXEL_POWER          (20u)   // Neopixel power pin
-#endif
+
+// UART configuration for KMBox serial input
+#define KMBOX_UART              uart1    // Use UART1 for KMBox (UART0 is for debug)
+#define KMBOX_UART_TX_PIN       (4u)     // GPIO4 for UART1 TX
+#define KMBOX_UART_RX_PIN       (5u)     // GPIO5 for UART1 RX
+#define KMBOX_UART_BAUDRATE     115200   // Standard baud rate for KMBox
+#define KMBOX_UART_FIFO_SIZE    32       // UART FIFO size for buffering
 
 // USB port configuration
 #define USB_DEVICE_PORT         0       // On-board USB controller port (device mode)
@@ -46,45 +43,6 @@
 
 // System clock configuration
 #define PIO_USB_SYSTEM_CLOCK_KHZ 120000 // 120MHz system clock required for PIO USB
-
-//--------------------------------------------------------------------+
-// RP2040/RP2350 SPECIFIC CONFIGURATION
-//--------------------------------------------------------------------+
-
-// On some samples, the xosc can take longer to stabilize than is usual
-#define PICO_XOSC_STARTUP_DELAY_MULTIPLIER 64
-
-// Use slower generic flash access for RP2040
-#define PICO_BOOT_STAGE2_CHOOSE_GENERIC_03H 1
-
-// Flash SPI clock divider (RP2040=4, RP2350=2)
-#ifndef PICO_FLASH_SPI_CLKDIV
-#if defined(TARGET_RP2350)
-#define PICO_FLASH_SPI_CLKDIV 2  // RP2350 default
-#else
-#define PICO_FLASH_SPI_CLKDIV 4  // RP2040 default
-#endif
-#endif
-
-// Flash size (8MB)
-#ifndef PICO_FLASH_SIZE_BYTES
-#define PICO_FLASH_SIZE_BYTES (8 * 1024 * 1024)
-#endif
-
-// Chip revision support
-#if defined(TARGET_RP2350)
-#define PICO_RP2350A 1              // RP2350 variant
-#define PICO_RP2350_A2_SUPPORTED 1  // Support A2 revision for RP2350
-#else
-#ifndef PICO_RP2040_B0_SUPPORTED
-#define PICO_RP2040_B0_SUPPORTED 0  // All RP2040 boards have B1
-#endif
-#endif
-
-// Default WS2812 pin for RP2350
-#if defined(TARGET_RP2350)
-#define PICO_DEFAULT_WS2812_PIN 21
-#endif
 
 //--------------------------------------------------------------------+
 // TIMING CONSTANTS
@@ -114,7 +72,7 @@
 #define USB_RESET_COOLDOWN_MS           2000    // Post-reset cooldown
 
 // Main loop task timing
-#define HID_DEVICE_TASK_INTERVAL_MS     3       // 3ms = ~333 FPS for ultra-smooth operation
+#define HID_DEVICE_TASK_INTERVAL_MS     8       // 8ms = ~125 FPS for ultra-smooth operation
 #define WATCHDOG_TASK_INTERVAL_MS       100     // Watchdog update frequency
 #define WATCHDOG_INIT_DELAY_MS          8       // HID device task frequency
 #define VISUAL_TASK_INTERVAL_MS         50      // LED/neopixel update frequency
@@ -235,7 +193,6 @@
 #define SERIAL_STRING_BUFFER_SIZE       17      // 16 chars + null terminator
 #define SERIAL_HEX_CHARS_PER_BYTE       2       // 2 hex characters per byte
 #define SERIAL_SNPRINTF_BUFFER_SIZE     3       // Buffer size for snprintf formatting
-#define USB_STRING_BUFFER_SIZE          64      // Buffer size for USB string descriptors
 
 //--------------------------------------------------------------------+
 // STRING DESCRIPTOR PROCESSING
@@ -343,11 +300,11 @@
 //--------------------------------------------------------------------+
 
 #ifndef ENABLE_HID_STATISTICS
-#define ENABLE_HID_STATISTICS           0
+#define ENABLE_HID_STATISTICS           1
 #endif
 
 #ifndef ENABLE_WATCHDOG_REPORTING
-#define ENABLE_WATCHDOG_REPORTING       0
+#define ENABLE_WATCHDOG_REPORTING       1
 #endif
 
 #ifndef ENABLE_NEOPIXEL_STATUS
@@ -355,10 +312,10 @@
 #endif
 
 #ifndef ENABLE_BUTTON_RESET
-#define ENABLE_BUTTON_RESET             0
+#define ENABLE_BUTTON_RESET             1
 #endif
 
-#define ENABLE_PERIODIC_REINIT          0
+#define ENABLE_PERIODIC_REINIT          1
 #define ENABLE_FALLBACK_MODE            1
 
 //--------------------------------------------------------------------+

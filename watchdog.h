@@ -18,11 +18,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "defines.h"
-//--------------------------------------------------------------------+
-// WATCHDOG CONFIGURATION
-//--------------------------------------------------------------------+
-
-// All watchdog constants are now in defines.h
 
 //--------------------------------------------------------------------+
 // WATCHDOG STATUS STRUCTURE

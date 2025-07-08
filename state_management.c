@@ -5,7 +5,6 @@
 #include "state_management.h"
 #include "defines.h"
 #include <string.h>
-// state_management.c
 static system_state_t g_system_state = {0};
 
 void system_state_init(system_state_t* state) {
