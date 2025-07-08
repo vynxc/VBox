@@ -187,17 +187,25 @@ static void send_button_state_callback(uint8_t button_state)
 
 static void parse_command(const char* cmd, uint32_t current_time_ms)
 {
+    // Fast path: check command prefix first
+    if (cmd[0] != 'k' || cmd[1] != 'm' || cmd[2] != '.') {
+        return;
+    }
+    
+    // Skip "km." prefix
+    const char* cmd_ptr = cmd + 3;
+    
     // Expected formats:
-    // km.button_name(state) - Example: km.left(1) or km.side2(0)
-    // km.click(button_num) - Example: km.click(0) for left button
-    // km.buttons() - Get callback state
-    // km.buttons(state) - Enable (1) or disable (0) callback
-    // km.move(x, y) - Move mouse by x,y pixels
-    // km.wheel(amount) - Scroll wheel up (+) or down (-)
-    // km.lock_mx() - Get X axis lock state
-    // km.lock_mx(state) - Set X axis lock (1=locked, 0=unlocked)
-    // km.lock_my() - Get Y axis lock state
-    // km.lock_my(state) - Set Y axis lock (1=locked, 0=unlocked)
+    // button_name(state) - Example: left(1) or side2(0)
+    // click(button_num) - Example: click(0) for left button
+    // buttons() - Get callback state
+    // buttons(state) - Enable (1) or disable (0) callback
+    // move(x, y) - Move mouse by x,y pixels
+    // wheel(amount) - Scroll wheel up (+) or down (-)
+    // lock_mx() - Get X axis lock state
+    // lock_mx(state) - Set X axis lock (1=locked, 0=unlocked)
+    // lock_my() - Get Y axis lock state
+    // lock_my(state) - Set Y axis lock (1=locked, 0=unlocked)
     
     // Check if command starts with "km."
     if (strncmp(cmd, "km.", 3) != 0) {

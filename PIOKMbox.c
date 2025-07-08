@@ -336,6 +336,12 @@ static inline bool is_time_elapsed(uint32_t current_time, uint32_t last_time, ui
 static void main_application_loop(void) {
     system_state_t* state = get_system_state();
     system_state_init(state);
+    
+    // Cache frequently used intervals
+    const uint32_t watchdog_interval = WATCHDOG_TASK_INTERVAL_MS;
+    const uint32_t visual_interval = VISUAL_TASK_INTERVAL_MS;
+    const uint32_t error_interval = ERROR_CHECK_INTERVAL_MS;
+    const uint32_t button_interval = BUTTON_DEBOUNCE_MS;
 
     while (true) {
         // TinyUSB device task - highest priority
@@ -345,43 +351,46 @@ static void main_application_loop(void) {
         // KMBox serial task - high priority for responsiveness
         kmbox_serial_task();
         
+        // Get time once per loop iteration
         const uint32_t current_time = to_ms_since_boot(get_absolute_time());
         
+        // Combine time checks to reduce function call overhead
+        const uint32_t time_since_watchdog = current_time - state->last_watchdog_time;
+        const uint32_t time_since_visual = current_time - state->last_visual_time;
+        const uint32_t time_since_button = current_time - state->last_button_time;
+        
         // Watchdog tasks - controlled frequency
-        if (system_state_should_run_task(state, current_time, 
-                                        state->last_watchdog_time, 
-                                        WATCHDOG_TASK_INTERVAL_MS)) {
+        if (time_since_watchdog >= watchdog_interval) {
             watchdog_task();
             watchdog_core0_heartbeat();
             state->last_watchdog_time = current_time;
         }
         
         // LED and visual tasks
-        if (system_state_should_run_task(state, current_time,
-                                        state->last_visual_time,
-                                        VISUAL_TASK_INTERVAL_MS)) {
+        if (time_since_visual >= visual_interval) {
             led_blinking_task();
             neopixel_status_task();
             state->last_visual_time = current_time;
         }
         
-        if (system_state_should_run_task(state, current_time,
-                                        state->last_error_check_time,
-                                        ERROR_CHECK_INTERVAL_MS)) {
+        // Error check (simplified - no actual task)
+        if (current_time - state->last_error_check_time >= error_interval) {
             state->last_error_check_time = current_time;
         }
         
         // Button input processing
-        if (system_state_should_run_task(state, current_time,
-                                        state->last_button_time,
-                                        BUTTON_DEBOUNCE_MS)) {
+        if (time_since_button >= button_interval) {
             process_button_input(state, current_time);
             state->last_button_time = current_time;
         }
         
-        // Periodic reporting
-        report_hid_statistics(current_time, &state->stats_timer);
-        report_watchdog_status(current_time, &state->watchdog_status_timer);
+        // Periodic reporting - inline time checks for efficiency
+        if ((current_time - state->stats_timer) >= STATS_REPORT_INTERVAL_MS) {
+            report_hid_statistics(current_time, &state->stats_timer);
+        }
+        if ((current_time - state->watchdog_status_timer) >= WATCHDOG_STATUS_REPORT_INTERVAL_MS) {
+            report_watchdog_status(current_time, &state->watchdog_status_timer);
+        }
     }
 }
 

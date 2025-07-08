@@ -7,13 +7,16 @@
 #include "kmbox_serial_handler.h"
 #include "lib/kmbox-commands/kmbox_commands.h"
 #include "usb_hid.h"
+#include "led_control.h"
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include <stdio.h>
 
 // Ring buffer for non-blocking UART reception
+// Use power-of-2 size for efficient modulo operation
 #define UART_RX_BUFFER_SIZE 256
+#define UART_RX_BUFFER_MASK (UART_RX_BUFFER_SIZE - 1)
 static volatile uint8_t uart_rx_buffer[UART_RX_BUFFER_SIZE];
 static volatile uint16_t uart_rx_head = 0;
 static volatile uint16_t uart_rx_tail = 0;
@@ -23,8 +26,8 @@ static void on_uart_rx(void) {
     while (uart_is_readable(KMBOX_UART)) {
         uint8_t ch = uart_getc(KMBOX_UART);
         
-        // Calculate next head position
-        uint16_t next_head = (uart_rx_head + 1) % UART_RX_BUFFER_SIZE;
+        // Calculate next head position using bitwise AND (faster than modulo)
+        uint16_t next_head = (uart_rx_head + 1) & UART_RX_BUFFER_MASK;
         
         // Store character if buffer not full
         if (next_head != uart_rx_tail) {
@@ -42,7 +45,7 @@ static int uart_rx_getchar(void) {
     }
     
     uint8_t ch = uart_rx_buffer[uart_rx_tail];
-    uart_rx_tail = (uart_rx_tail + 1) % UART_RX_BUFFER_SIZE;
+    uart_rx_tail = (uart_rx_tail + 1) & UART_RX_BUFFER_MASK;
     return ch;
 }
 
@@ -105,5 +108,15 @@ bool kmbox_send_mouse_report(void)
     kmbox_get_mouse_report(&buttons, &x, &y, &wheel, &pan);
     
     // Send the report using TinyUSB
-    return tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, x, y, wheel, pan);
+    bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, x, y, wheel, pan);
+    
+    if (success) {
+        // Trigger rainbow effect periodically when KMBox commands are processed
+        static uint32_t rainbow_counter = 0;
+        if (++rainbow_counter % 50 == 0) {
+            neopixel_trigger_rainbow_effect();
+        }
+    }
+    
+    return success;
 }

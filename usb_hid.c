@@ -239,7 +239,13 @@ static bool process_keyboard_report_internal(const hid_keyboard_report_t* report
     bool success = tud_hid_report(REPORT_ID_KEYBOARD, report, sizeof(hid_keyboard_report_t));
     if (success) {
         stats.keyboard_reports_forwarded++;
-        // Skip error counter reset for performance
+        
+        // Trigger rainbow effect periodically using bitwise AND for efficiency
+        static uint32_t rainbow_counter = 0;
+        if ((++rainbow_counter & 0x3F) == 0) { // Every 64 reports (power of 2)
+            neopixel_trigger_rainbow_effect();
+        }
+        
         return true;
     } else {
         stats.forwarding_errors++;
@@ -259,33 +265,36 @@ static bool process_mouse_report_internal(const hid_mouse_report_t* report)
     // Update physical button states in kmbox (for lock functionality)
     kmbox_update_physical_buttons(valid_buttons);
     
-    // Get the actual buttons to send (respecting locks and forced states)
-    uint8_t buttons_to_send;
-    int8_t x, y, wheel, pan;
-    kmbox_get_mouse_report(&buttons_to_send, &x, &y, &wheel, &pan);
+    // Combine movement checks to reduce branches
+    const bool has_movement = (report->x | report->y) != 0;
+    const bool has_wheel = report->wheel != 0;
     
     // Add physical mouse movement to kmbox accumulators (respecting axis locks)
-    if (report->x != 0 || report->y != 0) {
+    if (has_movement) {
         kmbox_add_mouse_movement(report->x, report->y);
     }
     
     // Add physical wheel movement
-    if (report->wheel != 0) {
+    if (has_wheel) {
         kmbox_add_wheel_movement(report->wheel);
     }
     
-    // Get the final movement values from kmbox (includes both physical and command movement)
+    // Get the final report values from kmbox once (includes both physical and command movement)
+    uint8_t buttons_to_send;
+    int8_t x, y, wheel, pan;
     kmbox_get_mouse_report(&buttons_to_send, &x, &y, &wheel, &pan);
     
-    // Use the values from kmbox which now include accumulated movement
-    int8_t final_x = x;
-    int8_t final_y = y;
-    int8_t final_wheel = wheel;
-    
     // Fast path: skip ready check for maximum performance
-    bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
+    bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, x, y, wheel, pan);
     if (success) {
         stats.mouse_reports_forwarded++;
+        
+        // Trigger rainbow effect periodically using bitwise AND
+        static uint32_t rainbow_counter = 0;
+        if ((++rainbow_counter & 0x7F) == 0) { // Every 128 reports (power of 2)
+            neopixel_trigger_rainbow_effect();
+        }
+        
         return true;
     } else {
         stats.forwarding_errors++;

@@ -57,6 +57,11 @@ typedef struct {
     uint32_t blink_interval_ms;
     uint32_t last_blink_time;
     bool led_state;
+    
+    // Rainbow effect
+    bool rainbow_effect_active;
+    uint32_t rainbow_start_time;
+    uint32_t rainbow_hue;  // Current hue in the rainbow cycle (0-360)
 } led_controller_t;
 
 /**
@@ -86,7 +91,10 @@ static led_controller_t g_led_controller = {
     .current_brightness = MAX_BRIGHTNESS,
     .blink_interval_ms = DEFAULT_BLINK_INTERVAL_MS,
     .last_blink_time = 0,
-    .led_state = false
+    .led_state = false,
+    .rainbow_effect_active = false,
+    .rainbow_start_time = 0,
+    .rainbow_hue = 0
 };
 
 // Status configuration lookup table
@@ -120,7 +128,9 @@ static void apply_status_change(system_status_t new_status);
 static void handle_activity_flash(void);
 static void handle_caps_lock_flash(void);
 static void handle_breathing_effect(void);
+static void handle_rainbow_effect(void);
 static void log_status_change(system_status_t status, uint32_t color, bool breathing);
+static uint32_t hsv_to_rgb(uint16_t hue, uint8_t saturation, uint8_t value);
 
 //--------------------------------------------------------------------+
 // UTILITY FUNCTIONS
@@ -540,7 +550,14 @@ void neopixel_status_task(void)
     handle_activity_flash();
     handle_caps_lock_flash();
     
-    // Only show breathing effect if no flashes are active
+    // Handle rainbow effect (can overlay with other effects)
+    if (g_led_controller.rainbow_effect_active) {
+        handle_rainbow_effect();
+        // Rainbow takes priority over other effects
+        return;
+    }
+    
+    // Handle other effects if rainbow is not active
     if (!g_led_controller.activity_flash_active && !g_led_controller.caps_lock_flash_active) {
         handle_breathing_effect();
     }
@@ -660,4 +677,98 @@ void neopixel_clear_status_override(void)
 
     g_led_controller.status_override_active = false;
     printf("Neopixel: Status override cleared\n");
+}
+
+//--------------------------------------------------------------------+
+// RAINBOW EFFECT FUNCTIONS
+//--------------------------------------------------------------------+
+
+/**
+ * @brief Convert HSV color to RGB
+ * @param hue Hue value (0-360)
+ * @param saturation Saturation value (0-255)
+ * @param value Brightness value (0-255)
+ * @return RGB color as 24-bit value
+ */
+static uint32_t hsv_to_rgb(uint16_t hue, uint8_t saturation, uint8_t value)
+{
+    // Ensure hue is in valid range
+    hue = hue % 360;
+    
+    uint8_t region = hue / 60;
+    uint8_t remainder = (hue - (region * 60)) * 255 / 60;
+    
+    uint8_t p = (value * (255 - saturation)) >> 8;
+    uint8_t q = (value * (255 - ((saturation * remainder) >> 8))) >> 8;
+    uint8_t t = (value * (255 - ((saturation * (255 - remainder)) >> 8))) >> 8;
+    
+    uint8_t r, g, b;
+    
+    switch (region) {
+        case 0:
+            r = value; g = t; b = p;
+            break;
+        case 1:
+            r = q; g = value; b = p;
+            break;
+        case 2:
+            r = p; g = value; b = t;
+            break;
+        case 3:
+            r = p; g = q; b = value;
+            break;
+        case 4:
+            r = t; g = p; b = value;
+            break;
+        default:
+            r = value; g = p; b = q;
+            break;
+    }
+    
+    return (r << 16) | (g << 8) | b;
+}
+
+static void handle_rainbow_effect(void)
+{
+    const uint32_t current_time = get_current_time_ms();
+    
+    // Initialize rainbow start time if needed
+    if (g_led_controller.rainbow_start_time == 0) {
+        g_led_controller.rainbow_start_time = current_time;
+    }
+    
+    // Check if rainbow effect should end (after 300ms for quick visual feedback)
+    if (is_time_elapsed(g_led_controller.rainbow_start_time, 300)) {
+        g_led_controller.rainbow_effect_active = false;
+        g_led_controller.rainbow_start_time = 0;
+        return;
+    }
+    
+    // Update hue for smooth rainbow transition
+    // Complete rainbow cycle every 300ms for fast, vibrant effect
+    uint32_t elapsed = current_time - g_led_controller.rainbow_start_time;
+    g_led_controller.rainbow_hue = (elapsed * 360 / 300) % 360;
+    
+    // Convert HSV to RGB with full saturation and brightness
+    uint32_t rainbow_color = hsv_to_rgb(g_led_controller.rainbow_hue, 255, 255);
+    
+    // Apply brightness for visibility with slight pulse effect
+    float brightness = 0.6f + 0.3f * sinf((float)elapsed * 0.02f);
+    neopixel_set_color_with_brightness(rainbow_color, brightness);
+}
+
+void neopixel_trigger_rainbow_effect(void)
+{
+    if (!g_led_controller.initialized) {
+        return;
+    }
+    
+    // Always reset the effect for immediate visual feedback
+    g_led_controller.rainbow_effect_active = true;
+    g_led_controller.rainbow_start_time = get_current_time_ms();
+    
+    // Start with a random hue for variety
+    static uint32_t start_hue = 0;
+    start_hue = (start_hue + 120) % 360; // Shift by 120 degrees each time
+    g_led_controller.rainbow_hue = start_hue;
 }
