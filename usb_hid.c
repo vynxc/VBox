@@ -39,29 +39,15 @@ typedef struct
     uint8_t keyboard_dev_addr;
 } device_connection_state_t;
 
-// Performance statistics with better organization
-typedef struct
-{
-    uint32_t mouse_reports_received;
-    uint32_t mouse_reports_forwarded;
-    uint32_t keyboard_reports_received;
-    uint32_t keyboard_reports_forwarded;
-    uint32_t forwarding_errors;
-} performance_stats_t;
-
 // Device mode state
 static bool caps_lock_state = false;
 
 static device_connection_state_t connection_state = {0};
 
-// Performance optimization: reduce debug output
-static uint32_t debug_counter = 0;
-
 // Serial string buffer (16 hex chars + null terminator)
 static char serial_string[SERIAL_STRING_BUFFER_SIZE] = {0};
 
-// Statistics and error tracking - now properly typed
-static performance_stats_t stats = {0};
+// Error tracking - now properly typed
 static usb_error_tracker_t usb_error_tracker = {0};
 
 // USB stack initialization tracking
@@ -327,13 +313,11 @@ static bool process_keyboard_report_internal(const hid_keyboard_report_t *report
     bool success = tud_hid_report(REPORT_ID_KEYBOARD, report, sizeof(hid_keyboard_report_t));
     if (success)
     {
-        stats.keyboard_reports_forwarded++;
         // Skip error counter reset for performance
         return true;
     }
     else
     {
-        stats.forwarding_errors++;
         return false;
     }
 }
@@ -347,13 +331,6 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
 
     // Fast button validation using bitwise AND
     uint8_t valid_buttons = report->buttons & 0x1F; // Keep first 5 bits (L/R/M/S1/S2 buttons)
-
-    // Debug: Log mouse movement data
-    static uint32_t debug_counter = 0;
-    if ((report->x != 0 || report->y != 0) && (++debug_counter % 10 == 0))
-    {
-        printf("Mouse movement: x=%d, y=%d, buttons=0x%02X\n", report->x, report->y, valid_buttons);
-    }
 
     // Update physical button states in kmbox (for lock functionality)
     kmbox_update_physical_buttons(valid_buttons);
@@ -377,12 +354,6 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     int8_t x, y, wheel, pan;
     kmbox_get_mouse_report(&buttons_to_send, &x, &y, &wheel, &pan);
 
-    // Debug: Log final movement values
-    if ((x != 0 || y != 0) && (debug_counter % 10 == 0))
-    {
-        printf("Final movement: x=%d, y=%d, buttons=0x%02X\n", x, y, buttons_to_send);
-    }
-
     int8_t final_x = x;
     int8_t final_y = y;
     int8_t final_wheel = wheel;
@@ -391,12 +362,10 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
     if (success)
     {
-        stats.mouse_reports_forwarded++;
         return true;
     }
     else
     {
-        stats.forwarding_errors++;
         return false;
     }
 }
@@ -430,7 +399,7 @@ void process_kbd_report(const hid_keyboard_report_t *report)
     // Fast forward the report
     if (process_keyboard_report_internal(report))
     {
-        stats.keyboard_reports_received++;
+        // Report processed successfully
     }
 }
 
@@ -450,7 +419,7 @@ void process_mouse_report(const hid_mouse_report_t *report)
     // Fast forward the report
     if (process_mouse_report_internal(report))
     {
-        stats.mouse_reports_received++;
+        // Report processed successfully  
     }
 }
 
@@ -595,27 +564,6 @@ void hid_host_task(void)
 {
     // This function can be called from core0 if needed for additional host processing
     // The main host task loop runs on core1 in PIOKMbox.c
-}
-
-void get_hid_stats(hid_stats_t *stats_out)
-{
-    if (stats_out == NULL)
-    {
-        return;
-    }
-
-    // Thread-safe copy of statistics
-    stats_out->mouse_reports_received = stats.mouse_reports_received;
-    stats_out->mouse_reports_forwarded = stats.mouse_reports_forwarded;
-    stats_out->keyboard_reports_received = stats.keyboard_reports_received;
-    stats_out->keyboard_reports_forwarded = stats.keyboard_reports_forwarded;
-    stats_out->forwarding_errors = stats.forwarding_errors;
-}
-
-void reset_hid_stats(void)
-{
-    memset(&stats, 0, sizeof(stats));
-    debug_counter = 0;
 }
 
 // Device callbacks with improved error handling
@@ -806,17 +754,6 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
         // Process mouse reports through kmbox system instead of raw forwarding
         if (len > 0)
         {
-            // Debug: Log raw mouse report data
-            static uint32_t raw_debug_counter = 0;
-            raw_debug_counter++;
-            if (len == 8) { // Only debug 8-byte reports without rate limiting for now
-                printf("Raw mouse report (len=%d): ", len);
-                for (int i = 0; i < len && i < 8; i++) {
-                    printf("%02X ", report[i]);
-                }
-                printf("\n");
-            }
-            
             // Handle different mouse report formats
             hid_mouse_report_t mouse_report_local = {0};
             
@@ -830,9 +767,9 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
                 int16_t y16 = (int16_t)(report[6] | (report[7] << 8));
                 
                 // Scale down the 16-bit coordinates for smoother movement
-                // Divide by 4 to reduce sensitivity and prevent overflow
-                x16 /= 4;
-                y16 /= 4;
+                // Right shift by 2 bits (divide by 4) to reduce sensitivity and prevent overflow
+                x16 >>= 2;
+                y16 >>= 2;
                 
                 // Clamp to 8-bit range 
                 if (x16 > 127) mouse_report_local.x = 127;
@@ -859,19 +796,6 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
                 if (copy_sz > sizeof(mouse_report_local))
                     copy_sz = sizeof(mouse_report_local);
                 memcpy(&mouse_report_local, report, copy_sz);
-            }
-
-            // Debug: Log parsed mouse report
-            if (len == 8) { // Always debug 8-byte parsed reports
-                printf("Parsed report: buttons=0x%02X, x=%d, y=%d, wheel=%d\n", 
-                       mouse_report_local.buttons, mouse_report_local.x, 
-                       mouse_report_local.y, mouse_report_local.wheel);
-            }
-            
-            // Special debug for scroll wheel detection
-            if (len == 8 && (report[1] != 0 || report[2] != 0 || report[3] != 0)) {
-                printf("SCROLL DEBUG - bytes [1]=%02X [2]=%02X [3]=%02X, using wheel=%d\n", 
-                       report[1], report[2], report[3], mouse_report_local.wheel);
             }
 
             // Process through kmbox system (this handles movement accumulation,

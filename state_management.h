@@ -18,7 +18,6 @@ typedef struct {
     uint32_t last_button_time;
     
     // Reporting timers
-    uint32_t stats_timer;
     uint32_t watchdog_status_timer;
     
     // Button state

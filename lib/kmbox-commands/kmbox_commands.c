@@ -26,14 +26,8 @@ static const char* button_names[KMBOX_BUTTON_COUNT] = {
     "side2"
 };
 
-// Button bit masks for HID report
-static const uint8_t button_masks[KMBOX_BUTTON_COUNT] = {
-    0x01,  // Left button
-    0x02,  // Right button
-    0x04,  // Middle button
-    0x08,  // Side button 1
-    0x10   // Side button 2
-};
+// Button bit masks for HID report - now handled inline for performance
+// 0x01, 0x02, 0x04, 0x08, 0x10 for LEFT, RIGHT, MIDDLE, SIDE1, SIDE2
 
 // Lock button name strings (short form for commands)
 static const char* lock_button_names[KMBOX_BUTTON_COUNT] = {
@@ -684,9 +678,12 @@ void kmbox_update_states(uint32_t current_time_ms)
 {
     g_kmbox_state.last_update_time = current_time_ms;
     
-    // Update each button state
-    for (int i = 0; i < KMBOX_BUTTON_COUNT; i++) {
-        button_state_t* btn = &g_kmbox_state.buttons[i];
+    // Update each button state - UNROLLED for performance
+    // Eliminates loop overhead in this frequently called function
+    
+    // Button 0 (LEFT)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_LEFT];
         
         // Handle click sequence
         if (btn->is_clicking) {
@@ -698,7 +695,7 @@ void kmbox_update_states(uint32_t current_time_ms)
                 btn->click_end_time = 0;
                 
                 // Restore physical button state
-                bool physical_pressed = (g_kmbox_state.physical_buttons & button_masks[i]) != 0;
+                bool physical_pressed = (g_kmbox_state.physical_buttons & 0x01) != 0;
                 btn->is_pressed = physical_pressed;
             } else if (current_time_ms >= btn->click_release_start) {
                 // In release phase of click
@@ -715,27 +712,199 @@ void kmbox_update_states(uint32_t current_time_ms)
                 
                 // Restore physical button state (unless locked)
                 if (!btn->is_locked) {
-                    bool physical_pressed = (g_kmbox_state.physical_buttons & button_masks[i]) != 0;
+                    bool physical_pressed = (g_kmbox_state.physical_buttons & 0x01) != 0;
                     btn->is_pressed = physical_pressed;
                 }
             }
         }
         // Update non-forced button states from physical state (unless locked)
         else if (!btn->is_forced && !btn->is_locked) {
-            bool physical_pressed = (g_kmbox_state.physical_buttons & button_masks[i]) != 0;
+            bool physical_pressed = (g_kmbox_state.physical_buttons & 0x01) != 0;
+            btn->is_pressed = physical_pressed;
+        }
+    }
+    
+    // Button 1 (RIGHT)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_RIGHT];
+        
+        // Handle click sequence
+        if (btn->is_clicking) {
+            if (current_time_ms >= btn->click_end_time) {
+                // Click sequence complete, return to hardware state
+                btn->is_clicking = false;
+                btn->is_forced = false;
+                btn->click_release_start = 0;
+                btn->click_end_time = 0;
+                
+                // Restore physical button state
+                bool physical_pressed = (g_kmbox_state.physical_buttons & 0x02) != 0;
+                btn->is_pressed = physical_pressed;
+            } else if (current_time_ms >= btn->click_release_start) {
+                // In release phase of click
+                btn->is_pressed = false;
+            }
+            // If still in press phase, is_pressed remains true
+        }
+        // Check if a forced release has expired (for non-click commands)
+        else if (btn->is_forced && !btn->is_pressed && btn->release_time > 0) {
+            if (current_time_ms >= btn->release_time) {
+                // Release time expired, button returns to physical state
+                btn->is_forced = false;
+                btn->release_time = 0;
+                
+                // Restore physical button state (unless locked)
+                if (!btn->is_locked) {
+                    bool physical_pressed = (g_kmbox_state.physical_buttons & 0x02) != 0;
+                    btn->is_pressed = physical_pressed;
+                }
+            }
+        }
+        // Update non-forced button states from physical state (unless locked)
+        else if (!btn->is_forced && !btn->is_locked) {
+            bool physical_pressed = (g_kmbox_state.physical_buttons & 0x02) != 0;
+            btn->is_pressed = physical_pressed;
+        }
+    }
+    
+    // Button 2 (MIDDLE)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_MIDDLE];
+        
+        // Handle click sequence
+        if (btn->is_clicking) {
+            if (current_time_ms >= btn->click_end_time) {
+                // Click sequence complete, return to hardware state
+                btn->is_clicking = false;
+                btn->is_forced = false;
+                btn->click_release_start = 0;
+                btn->click_end_time = 0;
+                
+                // Restore physical button state
+                bool physical_pressed = (g_kmbox_state.physical_buttons & 0x04) != 0;
+                btn->is_pressed = physical_pressed;
+            } else if (current_time_ms >= btn->click_release_start) {
+                // In release phase of click
+                btn->is_pressed = false;
+            }
+            // If still in press phase, is_pressed remains true
+        }
+        // Check if a forced release has expired (for non-click commands)
+        else if (btn->is_forced && !btn->is_pressed && btn->release_time > 0) {
+            if (current_time_ms >= btn->release_time) {
+                // Release time expired, button returns to physical state
+                btn->is_forced = false;
+                btn->release_time = 0;
+                
+                // Restore physical button state (unless locked)
+                if (!btn->is_locked) {
+                    bool physical_pressed = (g_kmbox_state.physical_buttons & 0x04) != 0;
+                    btn->is_pressed = physical_pressed;
+                }
+            }
+        }
+        // Update non-forced button states from physical state (unless locked)
+        else if (!btn->is_forced && !btn->is_locked) {
+            bool physical_pressed = (g_kmbox_state.physical_buttons & 0x04) != 0;
+            btn->is_pressed = physical_pressed;
+        }
+    }
+    
+    // Button 3 (SIDE1)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_SIDE1];
+        
+        // Handle click sequence
+        if (btn->is_clicking) {
+            if (current_time_ms >= btn->click_end_time) {
+                // Click sequence complete, return to hardware state
+                btn->is_clicking = false;
+                btn->is_forced = false;
+                btn->click_release_start = 0;
+                btn->click_end_time = 0;
+                
+                // Restore physical button state
+                bool physical_pressed = (g_kmbox_state.physical_buttons & 0x08) != 0;
+                btn->is_pressed = physical_pressed;
+            } else if (current_time_ms >= btn->click_release_start) {
+                // In release phase of click
+                btn->is_pressed = false;
+            }
+            // If still in press phase, is_pressed remains true
+        }
+        // Check if a forced release has expired (for non-click commands)
+        else if (btn->is_forced && !btn->is_pressed && btn->release_time > 0) {
+            if (current_time_ms >= btn->release_time) {
+                // Release time expired, button returns to physical state
+                btn->is_forced = false;
+                btn->release_time = 0;
+                
+                // Restore physical button state (unless locked)
+                if (!btn->is_locked) {
+                    bool physical_pressed = (g_kmbox_state.physical_buttons & 0x08) != 0;
+                    btn->is_pressed = physical_pressed;
+                }
+            }
+        }
+        // Update non-forced button states from physical state (unless locked)
+        else if (!btn->is_forced && !btn->is_locked) {
+            bool physical_pressed = (g_kmbox_state.physical_buttons & 0x08) != 0;
+            btn->is_pressed = physical_pressed;
+        }
+    }
+    
+    // Button 4 (SIDE2)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_SIDE2];
+        
+        // Handle click sequence
+        if (btn->is_clicking) {
+            if (current_time_ms >= btn->click_end_time) {
+                // Click sequence complete, return to hardware state
+                btn->is_clicking = false;
+                btn->is_forced = false;
+                btn->click_release_start = 0;
+                btn->click_end_time = 0;
+                
+                // Restore physical button state
+                bool physical_pressed = (g_kmbox_state.physical_buttons & 0x10) != 0;
+                btn->is_pressed = physical_pressed;
+            } else if (current_time_ms >= btn->click_release_start) {
+                // In release phase of click
+                btn->is_pressed = false;
+            }
+            // If still in press phase, is_pressed remains true
+        }
+        // Check if a forced release has expired (for non-click commands)
+        else if (btn->is_forced && !btn->is_pressed && btn->release_time > 0) {
+            if (current_time_ms >= btn->release_time) {
+                // Release time expired, button returns to physical state
+                btn->is_forced = false;
+                btn->release_time = 0;
+                
+                // Restore physical button state (unless locked)
+                if (!btn->is_locked) {
+                    bool physical_pressed = (g_kmbox_state.physical_buttons & 0x10) != 0;
+                    btn->is_pressed = physical_pressed;
+                }
+            }
+        }
+        // Update non-forced button states from physical state (unless locked)
+        else if (!btn->is_forced && !btn->is_locked) {
+            bool physical_pressed = (g_kmbox_state.physical_buttons & 0x10) != 0;
             btn->is_pressed = physical_pressed;
         }
     }
     
     // Check if button state has changed and callback is enabled
     if (g_kmbox_state.button_callback_enabled) {
-        // Build current button state bitmap
-        uint8_t current_button_state = 0;
-        for (int i = 0; i < KMBOX_BUTTON_COUNT; i++) {
-            if (g_kmbox_state.buttons[i].is_pressed) {
-                current_button_state |= button_masks[i];
-            }
-        }
+        // Build current button state bitmap - UNROLLED for performance
+        uint8_t current_button_state = 
+            (g_kmbox_state.buttons[KMBOX_BUTTON_LEFT].is_pressed   ? 0x01 : 0) |
+            (g_kmbox_state.buttons[KMBOX_BUTTON_RIGHT].is_pressed  ? 0x02 : 0) |
+            (g_kmbox_state.buttons[KMBOX_BUTTON_MIDDLE].is_pressed ? 0x04 : 0) |
+            (g_kmbox_state.buttons[KMBOX_BUTTON_SIDE1].is_pressed  ? 0x08 : 0) |
+            (g_kmbox_state.buttons[KMBOX_BUTTON_SIDE2].is_pressed  ? 0x10 : 0);
         
         // Send callback if state changed
         if (current_button_state != g_kmbox_state.last_button_state) {
@@ -751,14 +920,14 @@ void kmbox_get_mouse_report(uint8_t* buttons, int8_t* x, int8_t* y, int8_t* whee
         return;
     }
     
-    // Build button byte from current states
-    uint8_t button_byte = 0;
-    
-    for (int i = 0; i < KMBOX_BUTTON_COUNT; i++) {
-        if (g_kmbox_state.buttons[i].is_pressed) {
-            button_byte |= button_masks[i];
-        }
-    }
+    // Build button byte from current states - UNROLLED for performance
+    // Direct bit manipulation eliminates loop overhead and enables better optimization
+    uint8_t button_byte = 
+        (g_kmbox_state.buttons[KMBOX_BUTTON_LEFT].is_pressed   ? 0x01 : 0) |
+        (g_kmbox_state.buttons[KMBOX_BUTTON_RIGHT].is_pressed  ? 0x02 : 0) |
+        (g_kmbox_state.buttons[KMBOX_BUTTON_MIDDLE].is_pressed ? 0x04 : 0) |
+        (g_kmbox_state.buttons[KMBOX_BUTTON_SIDE1].is_pressed  ? 0x08 : 0) |
+        (g_kmbox_state.buttons[KMBOX_BUTTON_SIDE2].is_pressed  ? 0x10 : 0);
     
     // Set output values
     *buttons = button_byte;
@@ -787,12 +956,6 @@ void kmbox_get_mouse_report(uint8_t* buttons, int8_t* x, int8_t* y, int8_t* whee
         g_kmbox_state.mouse_y_accumulator = 0;
     }
     
-    // Debug: Log when values are returned
-    static uint32_t debug_counter = 0;
-    if ((*x != 0 || *y != 0) && (++debug_counter % 20 == 0)) {
-        printf("Getting report: x=%d, y=%d, buttons=0x%02X\n", *x, *y, *buttons);
-    }
-    
     // Get wheel value
     *wheel = g_kmbox_state.wheel_accumulator;
     g_kmbox_state.wheel_accumulator = 0;
@@ -802,12 +965,13 @@ void kmbox_get_mouse_report(uint8_t* buttons, int8_t* x, int8_t* y, int8_t* whee
 
 bool kmbox_has_forced_buttons(void)
 {
-    for (int i = 0; i < KMBOX_BUTTON_COUNT; i++) {
-        if (g_kmbox_state.buttons[i].is_forced) {
-            return true;
-        }
-    }
-    return false;
+    // Check all buttons for forced state - UNROLLED for performance
+    // Direct access eliminates loop overhead
+    return g_kmbox_state.buttons[KMBOX_BUTTON_LEFT].is_forced ||
+           g_kmbox_state.buttons[KMBOX_BUTTON_RIGHT].is_forced ||
+           g_kmbox_state.buttons[KMBOX_BUTTON_MIDDLE].is_forced ||
+           g_kmbox_state.buttons[KMBOX_BUTTON_SIDE1].is_forced ||
+           g_kmbox_state.buttons[KMBOX_BUTTON_SIDE2].is_forced;
 }
 
 const char* kmbox_get_button_name(kmbox_button_t button)
@@ -822,26 +986,52 @@ void kmbox_update_physical_buttons(uint8_t physical_buttons)
 {
     g_kmbox_state.physical_buttons = physical_buttons;
     
-    // Update button states for non-forced, non-locked buttons
-    for (int i = 0; i < KMBOX_BUTTON_COUNT; i++) {
-        button_state_t* btn = &g_kmbox_state.buttons[i];
-        
-        // Only update if button is not forced and not locked
+    // Update button states for non-forced, non-locked buttons - UNROLLED for performance
+    // Direct bit testing eliminates loop overhead and array indexing
+    
+    // Button 0 (LEFT)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_LEFT];
         if (!btn->is_forced && !btn->is_locked) {
-            btn->is_pressed = (physical_buttons & button_masks[i]) != 0;
+            btn->is_pressed = (physical_buttons & 0x01) != 0;
+        }
+    }
+    
+    // Button 1 (RIGHT)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_RIGHT];
+        if (!btn->is_forced && !btn->is_locked) {
+            btn->is_pressed = (physical_buttons & 0x02) != 0;
+        }
+    }
+    
+    // Button 2 (MIDDLE)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_MIDDLE];
+        if (!btn->is_forced && !btn->is_locked) {
+            btn->is_pressed = (physical_buttons & 0x04) != 0;
+        }
+    }
+    
+    // Button 3 (SIDE1)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_SIDE1];
+        if (!btn->is_forced && !btn->is_locked) {
+            btn->is_pressed = (physical_buttons & 0x08) != 0;
+        }
+    }
+    
+    // Button 4 (SIDE2)
+    {
+        button_state_t* btn = &g_kmbox_state.buttons[KMBOX_BUTTON_SIDE2];
+        if (!btn->is_forced && !btn->is_locked) {
+            btn->is_pressed = (physical_buttons & 0x10) != 0;
         }
     }
 }
 
 void kmbox_add_mouse_movement(int16_t x, int16_t y)
 {
-    // Debug: Log movement addition
-    static uint32_t debug_counter = 0;
-    if ((x != 0 || y != 0) && (++debug_counter % 20 == 0)) {
-        printf("Adding movement: x=%d, y=%d, lock_mx=%d, lock_my=%d\n", 
-               x, y, g_kmbox_state.lock_mx ? 1 : 0, g_kmbox_state.lock_my ? 1 : 0);
-    }
-    
     // Apply axis locks
     if (!g_kmbox_state.lock_mx) {
         g_kmbox_state.mouse_x_accumulator += x;
@@ -849,12 +1039,6 @@ void kmbox_add_mouse_movement(int16_t x, int16_t y)
     
     if (!g_kmbox_state.lock_my) {
         g_kmbox_state.mouse_y_accumulator += y;
-    }
-    
-    // Debug: Log accumulator state
-    if ((x != 0 || y != 0) && (debug_counter % 20 == 0)) {
-        printf("Accumulators: x_acc=%d, y_acc=%d\n", 
-               g_kmbox_state.mouse_x_accumulator, g_kmbox_state.mouse_y_accumulator);
     }
 }
 

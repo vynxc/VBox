@@ -53,18 +53,6 @@ bool is_keyboard_connected(void);
 void usb_device_mark_initialized(void);
 void usb_host_mark_initialized(void);
 
-// Performance monitoring
-typedef struct {
-    uint32_t mouse_reports_received;
-    uint32_t mouse_reports_forwarded;
-    uint32_t keyboard_reports_received;
-    uint32_t keyboard_reports_forwarded;
-    uint32_t forwarding_errors;
-} hid_stats_t;
-
-void get_hid_stats(hid_stats_t* stats_out);
-void reset_hid_stats(void);
-
 // USB stack reset functions
 bool usb_device_stack_reset(void);
 bool usb_host_stack_reset(void);

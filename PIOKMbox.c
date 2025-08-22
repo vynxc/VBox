@@ -36,7 +36,6 @@
 //--------------------------------------------------------------------+
 
 typedef struct {
-    uint32_t stats_timer;
     uint32_t watchdog_status_timer;
     uint32_t last_button_press_time;
     bool button_pressed_last;
@@ -53,7 +52,6 @@ typedef struct {
 //--------------------------------------------------------------------+
 // Constants and Configuration
 //--------------------------------------------------------------------+
-static const uint32_t STATS_INTERVAL_MS = STATS_REPORT_INTERVAL_MS;
 static const uint32_t WATCHDOG_STATUS_INTERVAL_MS = WATCHDOG_STATUS_REPORT_INTERVAL_MS;
 
 //--------------------------------------------------------------------+
@@ -77,7 +75,6 @@ static void handle_button_release(const system_state_t* state, uint32_t hold_dur
 static void process_button_input(system_state_t* state, uint32_t current_time);
 
 // Reporting functions
-static void report_hid_statistics(uint32_t current_time, uint32_t* stats_timer);
 static void report_watchdog_status(uint32_t current_time, uint32_t* watchdog_status_timer);
 
 // Utility functions
@@ -279,25 +276,6 @@ static void process_button_input(system_state_t* state, uint32_t current_time) {
 // Reporting Functions
 //--------------------------------------------------------------------+
 
-static void report_hid_statistics(uint32_t current_time, uint32_t* stats_timer) {
-    if (!is_time_elapsed(current_time, *stats_timer, STATS_INTERVAL_MS)) {
-        return;
-    }
-
-    *stats_timer = current_time;
-    
-    hid_stats_t stats;
-    get_hid_stats(&stats);
-    
-    printf("=== HID Statistics ===\n");
-    printf("Mouse: RX=%lu, TX=%lu\n", stats.mouse_reports_received, stats.mouse_reports_forwarded);
-    printf("Keyboard: RX=%lu, TX=%lu\n", stats.keyboard_reports_received, stats.keyboard_reports_forwarded);
-    printf("Errors: %lu\n", stats.forwarding_errors);
-    printf("Mouse connected: %s\n", is_mouse_connected() ? "YES" : "NO");
-    printf("Keyboard connected: %s\n", is_keyboard_connected() ? "YES" : "NO");
-    printf("=====================\n");
-}
-
 static void report_watchdog_status(uint32_t current_time, uint32_t* watchdog_status_timer) {
     if (!is_time_elapsed(current_time, *watchdog_status_timer, WATCHDOG_STATUS_INTERVAL_MS)) {
         return;
@@ -384,10 +362,7 @@ static void main_application_loop(void) {
             state->last_button_time = current_time;
         }
         
-        // Periodic reporting - inline time checks for efficiency
-        if ((current_time - state->stats_timer) >= STATS_REPORT_INTERVAL_MS) {
-            report_hid_statistics(current_time, &state->stats_timer);
-        }
+        // Periodic reporting - watchdog status only
         if ((current_time - state->watchdog_status_timer) >= WATCHDOG_STATUS_REPORT_INTERVAL_MS) {
             report_watchdog_status(current_time, &state->watchdog_status_timer);
         }

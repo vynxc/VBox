@@ -103,7 +103,6 @@
 // Reporting intervals
 #define DEBUG_INTERVAL                  10000   // Print debug every 10000 reports
 #define TASK_COUNT_REPORT_INTERVAL      500000  // Print status every N task iterations
-#define STATS_REPORT_INTERVAL_MS        30000   // HID statistics reporting
 #define WATCHDOG_STATUS_REPORT_INTERVAL_MS 60000 // Watchdog status reporting
 
 //--------------------------------------------------------------------+
