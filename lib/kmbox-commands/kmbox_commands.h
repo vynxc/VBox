@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 //--------------------------------------------------------------------+
 // Button Definitions
@@ -78,6 +79,12 @@ void kmbox_commands_init(void);
 
 // Process incoming serial data (call this with each received character)
 void kmbox_process_serial_char(char c, uint32_t current_time_ms);
+
+// Process a complete command line (without trailing terminator). The caller
+// should pass the line contents (len bytes), the terminator bytes (pointer)
+// and terminator length (1 or 2). This allows callers to hand over full
+// lines from DMA/ring-buffer with a single call instead of per-byte calls.
+void kmbox_process_serial_line(const char *line, size_t len, const char *terminator, uint8_t term_len, uint32_t current_time_ms);
 
 // Update button states and handle timing (call this periodically)
 void kmbox_update_states(uint32_t current_time_ms);

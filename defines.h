@@ -27,10 +27,16 @@
 
 // UART configuration for KMBox serial input
 #define KMBOX_UART              uart1    // Use UART1 for KMBox (UART0 is for debug)
-#define KMBOX_UART_TX_PIN       (4u)     // GPIO4 for UART1 TX
-#define KMBOX_UART_RX_PIN       (5u)     // GPIO5 for UART1 RX
+#define KMBOX_UART_TX_PIN       (5u)     // GPIO4 for UART1 TX
+#define KMBOX_UART_RX_PIN       (6u)     // GPIO5 for UART1 RX
 #define KMBOX_UART_BAUDRATE     115200   // Standard baud rate for KMBox
 #define KMBOX_UART_FIFO_SIZE    32       // UART FIFO size for buffering
+
+// Enable or disable the PIO-based KMBox UART. Set to 1 to enable PIO UART
+// (uses pio1 + DMA), or 0 to force fallback to hardware UART1.
+#ifndef KMBOX_ENABLE_PIO_UART
+#define KMBOX_ENABLE_PIO_UART 0
+#endif
 
 // USB port configuration
 #define USB_DEVICE_PORT         0       // On-board USB controller port (device mode)

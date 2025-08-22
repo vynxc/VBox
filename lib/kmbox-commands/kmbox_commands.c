@@ -562,6 +562,10 @@ void kmbox_commands_init(void)
     // Initialize button callback state
     g_kmbox_state.button_callback_enabled = false;
     g_kmbox_state.last_button_state = 0;
+    
+    // Debug: Log initial axis lock states
+    printf("KMBox initialized - lock_mx=%d, lock_my=%d\n", 
+           g_kmbox_state.lock_mx ? 1 : 0, g_kmbox_state.lock_my ? 1 : 0);
 }
 
 void kmbox_process_serial_char(char c, uint32_t current_time_ms)
@@ -640,6 +644,40 @@ void kmbox_process_serial_char(char c, uint32_t current_time_ms)
         g_parser.buffer_pos = 0;
         g_parser.in_command = false;
     }
+}
+
+// Accept a complete command line (without trailing terminator characters).
+// This helper allows callers to hand over full lines from DMA/ring-buffer
+// with minimal per-byte overhead. The function will copy at most
+// KMBOX_CMD_BUFFER_SIZE-1 bytes into the parser buffer and call parse_command().
+void kmbox_process_serial_line(const char *line, size_t len, const char *terminator, uint8_t term_len, uint32_t current_time_ms)
+{
+    if (len == 0 || !line) return;
+
+    // Truncate if necessary
+    size_t copy_len = (len >= KMBOX_CMD_BUFFER_SIZE) ? (KMBOX_CMD_BUFFER_SIZE - 1) : len;
+
+    // Copy into parser buffer and null-terminate
+    memcpy(g_parser.buffer, line, copy_len);
+    g_parser.buffer[copy_len] = '\0';
+    g_parser.buffer_pos = (uint8_t)copy_len;
+
+    // Store terminator info
+    if (terminator && term_len > 0) {
+        size_t tl = (term_len > 2) ? 2 : term_len;
+        memcpy(g_parser.command_terminator, terminator, tl);
+        g_parser.terminator_len = (uint8_t)tl;
+    } else {
+        g_parser.terminator_len = 0;
+    }
+
+    // Process the command
+    parse_command(g_parser.buffer, current_time_ms);
+
+    // Reset parser state
+    g_parser.buffer_pos = 0;
+    g_parser.in_command = false;
+    g_parser.skip_next_terminator = false;
 }
 
 void kmbox_update_states(uint32_t current_time_ms)
@@ -749,6 +787,12 @@ void kmbox_get_mouse_report(uint8_t* buttons, int8_t* x, int8_t* y, int8_t* whee
         g_kmbox_state.mouse_y_accumulator = 0;
     }
     
+    // Debug: Log when values are returned
+    static uint32_t debug_counter = 0;
+    if ((*x != 0 || *y != 0) && (++debug_counter % 20 == 0)) {
+        printf("Getting report: x=%d, y=%d, buttons=0x%02X\n", *x, *y, *buttons);
+    }
+    
     // Get wheel value
     *wheel = g_kmbox_state.wheel_accumulator;
     g_kmbox_state.wheel_accumulator = 0;
@@ -791,6 +835,13 @@ void kmbox_update_physical_buttons(uint8_t physical_buttons)
 
 void kmbox_add_mouse_movement(int16_t x, int16_t y)
 {
+    // Debug: Log movement addition
+    static uint32_t debug_counter = 0;
+    if ((x != 0 || y != 0) && (++debug_counter % 20 == 0)) {
+        printf("Adding movement: x=%d, y=%d, lock_mx=%d, lock_my=%d\n", 
+               x, y, g_kmbox_state.lock_mx ? 1 : 0, g_kmbox_state.lock_my ? 1 : 0);
+    }
+    
     // Apply axis locks
     if (!g_kmbox_state.lock_mx) {
         g_kmbox_state.mouse_x_accumulator += x;
@@ -798,6 +849,12 @@ void kmbox_add_mouse_movement(int16_t x, int16_t y)
     
     if (!g_kmbox_state.lock_my) {
         g_kmbox_state.mouse_y_accumulator += y;
+    }
+    
+    // Debug: Log accumulator state
+    if ((x != 0 || y != 0) && (debug_counter % 20 == 0)) {
+        printf("Accumulators: x_acc=%d, y_acc=%d\n", 
+               g_kmbox_state.mouse_x_accumulator, g_kmbox_state.mouse_y_accumulator);
     }
 }
 

@@ -15,15 +15,15 @@ if(WIN32)
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.1.1)
+set(sdkVersion 2.2.0)
 set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.1.1)
+set(picotoolVersion 2.2.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico CACHE STRING "Board type")
+set(PICO_BOARD adafruit_feather_rp2040_usb_host CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -43,10 +43,12 @@ add_executable(PIOKMbox
     init_state_machine.c
     state_management.c
     kmbox_serial_handler.c
+    pio_uart.c
 )
 
 # generate the header file into the source tree as it is included in the RP2040 datasheet
 pico_generate_pio_header(PIOKMbox ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR})
+pico_generate_pio_header(PIOKMbox ${CMAKE_CURRENT_LIST_DIR}/pio_uart.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 pico_set_program_name(PIOKMbox "PIOKMbox")
 pico_set_program_version(PIOKMbox "0.1")

@@ -15,11 +15,6 @@
 #include <stdio.h>
 #include <string.h>
 
-//--------------------------------------------------------------------+
-// CONSTANTS AND CONFIGURATION
-//--------------------------------------------------------------------+
-
-// All timing, brightness, and configuration constants are now in defines.h
 
 //--------------------------------------------------------------------+
 // TYPE DEFINITIONS

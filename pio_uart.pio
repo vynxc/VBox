@@ -1,0 +1,31 @@
+; Oversampled x8 8N1 UART PIO programs (TX + RX)
+; These programs expect the SM clkdiv to be set so that one PIO instruction
+; executes every (bit_time / 8) CPU cycles: clkdiv = sysclk / (baud * 8)
+
+.program uart_tx
+.wrap_target
+    pull block
+    out x, 8
+    ; start bit: low for one bit-time (8 cycles)
+    set pins, 0 [7]
+tx_bitloop:
+    ; output LSB of X for one bit-time
+    out pins, 1 [7]
+    jmp x--, tx_bitloop
+    ; stop bit: high for one bit-time
+    set pins, 1 [7]
+    nop
+.wrap
+
+.program uart_rx
+.wrap_target
+    ; wait for start bit (line low)
+    wait 0 pin 0
+    ; delay half bit-time to sample near center (4 cycles)
+    nop [3]
+    set x, 7
+rx_bitloop:
+    in pins, 1 [7]
+    jmp x--, rx_bitloop
+    push block
+.wrap

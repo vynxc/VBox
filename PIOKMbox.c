@@ -418,33 +418,49 @@ int main(void) {
     printf("=== PIOKMBox Starting ===\n");
     
     // Initialize system components
+    printf("BOOTTRACE: calling initialize_system()\n");
     if (!initialize_system()) {
         printf("CRITICAL: System initialization failed\n");
         return -1;
     }
+    printf("BOOTTRACE: initialize_system() returned\n");
     
     // Enable USB host power
+    printf("BOOTTRACE: enabling USB host power\n");
     usb_host_enable_power();
     sleep_ms(100);  // Brief power stabilization
+    printf("BOOTTRACE: USB host power enabled\n");
     
     // Launch core1 first (like the working example)
-    printf("Launching core1 for USB host...\n");
+    printf("BOOTTRACE: launching core1 for USB host...\n");
     multicore_reset_core1();
     multicore_launch_core1(core1_main);
+    printf("BOOTTRACE: core1 launched\n");
     
     // Initialize device stack on core0 (like the working example)
-    printf("Initializing USB device stack on core0...\n");
+    printf("BOOTTRACE: initializing USB device stack on core0...\n");
     if (!initialize_usb_device()) {
         printf("CRITICAL: USB Device initialization failed\n");
         return -1;
     }
+    printf("BOOTTRACE: USB device initialized\n");
     
     // Initialize remaining systems
+    printf("BOOTTRACE: initializing watchdog...\n");
     watchdog_init();
-    watchdog_start();
+    printf("BOOTTRACE: watchdog_init() returned\n");
+    // NOTE: For debugging startup hangs we skip the extended, blocking
+    // watchdog_start() sequence which performs long sleeps/prints and
+    // enables the hardware watchdog. If you need the full watchdog
+    // behavior re-enable the call below.
+    // watchdog_start();
+    printf("BOOTTRACE: watchdog_start() skipped (debug)\n");
+    printf("BOOTTRACE: enabling neopixel power\n");
     neopixel_enable_power();
+    printf("BOOTTRACE: neopixel power enabled\n");
     
     printf("=== PIOKMBox Ready ===\n");
+    printf("BOOTTRACE: about to enter main_application_loop()\n");
     
     // Enter main application loop
     main_application_loop();
