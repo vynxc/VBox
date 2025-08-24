@@ -376,7 +376,7 @@ static void main_application_loop(void) {
 int main(void) {
     
     // Set system clock to 120MHz (required for PIO USB)
-    set_sys_clock_khz(120000, true);
+    set_sys_clock_khz(CPU_FREQ, true);
     
     // Small delay for clock stabilization
     sleep_ms(10);

@@ -11,7 +11,6 @@
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
-#include "pio_uart.h"
 #include <stdio.h>
 
 // Ring buffer for non-blocking UART reception
@@ -129,57 +128,30 @@ static bool ringbuf_peek_line_and_copy(char *dst, size_t dst_size, size_t *out_l
 // Initialize the serial handler
 void kmbox_serial_init(void)
 {
-    // Prefer PIO-based UART for KMBox serial (better throughput, offloads CPU)
-#if KMBOX_ENABLE_PIO_UART
-    bool pio_ok = pio_uart_init(KMBOX_UART_BAUDRATE);
-
-    if (pio_ok) {
-        // Attach PIO RX DMA directly to the ring buffer to avoid extra copies.
-        // This configures the PIO UART DMA to write into 'uart_rx_buffer' and
-        // advance 'uart_rx_head' from IRQ context.
-        bool attached = pio_uart_attach_rx_ringbuffer(uart_rx_buffer, &uart_rx_head, &uart_rx_tail, UART_RX_BUFFER_SIZE);
-        if (!attached) {
-            // If attach failed, fall back to callback-based copying
-            pio_uart_set_rx_callback(pio_rx_to_ringbuffer);
-        }
-    } else {
-        printf("PIO UART init failed or not available - falling back to hardware UART1\n");
-    }
-#else
     bool pio_ok = false;
     printf("PIO UART disabled via KMBOX_ENABLE_PIO_UART - using hardware UART1 fallback\n");
-#endif
 
-    if (!pio_ok) {
-        // Fallback: Initialize hardware UART1 for KMBox serial input
-        uart_init(KMBOX_UART, KMBOX_UART_BAUDRATE);
-        
-        // Set up GPIO pins for UART1
-        gpio_set_function(KMBOX_UART_TX_PIN, GPIO_FUNC_UART);
-        gpio_set_function(KMBOX_UART_RX_PIN, GPIO_FUNC_UART);
-        
-        // Enable UART FIFOs for better performance
-        uart_set_fifo_enabled(KMBOX_UART, true);
-        
-        // Set up UART RX interrupt for non-blocking reception
-        int uart_irq = (KMBOX_UART == uart0) ? UART0_IRQ : UART1_IRQ;
-        irq_set_exclusive_handler(uart_irq, on_uart_rx);
-        irq_set_enabled(uart_irq, true);
-        
-        // Enable UART RX interrupt
-        uart_set_irq_enables(KMBOX_UART, true, false);
-    }
+    uart_init(KMBOX_UART, KMBOX_UART_BAUDRATE);
     
+    // Set up GPIO pins for UART1
+    gpio_set_function(KMBOX_UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(KMBOX_UART_RX_PIN, GPIO_FUNC_UART);
+    
+    // Enable UART FIFOs for better performance
+    uart_set_fifo_enabled(KMBOX_UART, true);
+    
+    // Set up UART RX interrupt for non-blocking reception
+    int uart_irq = (KMBOX_UART == uart0) ? UART0_IRQ : UART1_IRQ;
+    irq_set_exclusive_handler(uart_irq, on_uart_rx);
+    irq_set_enabled(uart_irq, true);
+    
+    // Enable UART RX interrupt
+    uart_set_irq_enables(KMBOX_UART, true, false);
     // Initialize the kmbox commands module
     kmbox_commands_init();
     
-    if (pio_ok) {
-        printf("KMBox serial handler initialized using PIO UART (TX: GPIO%d, RX: GPIO%d) @ %d baud\n",
-               KMBOX_UART_TX_PIN, KMBOX_UART_RX_PIN, KMBOX_UART_BAUDRATE);
-    } else {
-        printf("KMBox serial handler initialized on UART1 (TX: GPIO%d, RX: GPIO%d) @ %d baud\n",
-               KMBOX_UART_TX_PIN, KMBOX_UART_RX_PIN, KMBOX_UART_BAUDRATE);
-    }
+    printf("KMBox serial handler initialized on UART1 (TX: GPIO%d, RX: GPIO%d) @ %d baud\n",
+           KMBOX_UART_TX_PIN, KMBOX_UART_RX_PIN, KMBOX_UART_BAUDRATE);
 }
 
 // Process any available serial input

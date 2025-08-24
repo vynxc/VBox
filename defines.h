@@ -11,6 +11,9 @@
 //--------------------------------------------------------------------+
 // HARDWARE CONFIGURATION
 //--------------------------------------------------------------------+
+#ifndef CPU_FREQ
+#define CPU_FREQ 120000
+#endif
 
 // Pin definitions
 #ifndef PIN_USB_HOST_DP
@@ -32,12 +35,6 @@
 #define KMBOX_UART_BAUDRATE     115200   // Standard baud rate for KMBox
 #define KMBOX_UART_FIFO_SIZE    32       // UART FIFO size for buffering
 
-// Enable or disable the PIO-based KMBox UART. Set to 1 to enable PIO UART
-// (uses pio1 + DMA), or 0 to force fallback to hardware UART1.
-#ifndef KMBOX_ENABLE_PIO_UART
-#define KMBOX_ENABLE_PIO_UART 0
-#endif
-
 // USB port configuration
 #define USB_DEVICE_PORT         0       // On-board USB controller port (device mode)
 #define USB_HOST_PORT           1       // PIO USB controller port (host mode)
@@ -48,7 +45,7 @@
 #define USB_HOST_CORE           1       // Core 1 handles USB host tasks
 
 // System clock configuration
-#define PIO_USB_SYSTEM_CLOCK_KHZ 120000 // 120MHz system clock required for PIO USB
+#define PIO_USB_SYSTEM_CLOCK_KHZ CPU_FREQ // 120MHz system clock required for PIO USB
 
 //--------------------------------------------------------------------+
 // TIMING CONSTANTS
@@ -251,6 +248,12 @@
 // WS2812 configuration
 #define WS2812_FREQUENCY_HZ             800000
 #define WS2812_RGB_SHIFT                8u
+
+// Rainbow movement configuration
+// Degrees of hue change per unit of mouse movement (signed)
+#define RAINBOW_MOVE_SCALE_DEG_PER_UNIT 2.0f
+// Automatic slow rotation applied when idle (degrees per millisecond)
+#define RAINBOW_AUTO_SPEED_DEG_PER_MS   0.12f
 
 //--------------------------------------------------------------------+
 // BUFFER AND ARRAY CONSTANTS

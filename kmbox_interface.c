@@ -147,7 +147,7 @@ static bool init_uart(const kmbox_uart_config_t* config)
     
     // Initialize UART
     uart_init(g_interface.instance.uart, config->baudrate);
-    
+
     // Configure pins
     gpio_set_function(config->tx_pin, GPIO_FUNC_UART);
     gpio_set_function(config->rx_pin, GPIO_FUNC_UART);

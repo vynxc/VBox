@@ -12,6 +12,7 @@
 #include "ws2812.pio.h"
 #include "tusb.h"
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -57,6 +58,8 @@ typedef struct {
     bool rainbow_effect_active;
     uint32_t rainbow_start_time;
     uint32_t rainbow_hue;  // Current hue in the rainbow cycle (0-360)
+    // Movement-driven rainbow
+    uint32_t rainbow_last_update_time_ms;
 } led_controller_t;
 
 /**
@@ -213,7 +216,6 @@ void neopixel_init(void)
 {
     // Prevent double initialization
     if (g_led_controller.initialized) {
-        printf("Warning: Neopixel already initialized\n");
         return;
     }
 
@@ -227,17 +229,14 @@ void neopixel_init(void)
     gpio_set_dir(NEOPIXEL_POWER, GPIO_OUT);
     gpio_put(NEOPIXEL_POWER, 0);  // Keep power OFF initially
 
-    printf("Neopixel pins initialized (power OFF for cold boot stability)\n");
+    (void)0; // suppressed init log to avoid blocking hot paths
 }
 
 void neopixel_enable_power(void)
 {
     if (g_led_controller.initialized) {
-        printf("Warning: Neopixel already fully initialized\n");
         return;
     }
-
-    printf("Enabling neopixel power...\n");
     
     // Enable neopixel power
     gpio_put(NEOPIXEL_POWER, 1);
@@ -248,7 +247,6 @@ void neopixel_enable_power(void)
     // Load WS2812 program into PIO
     uint offset = pio_add_program(g_led_controller.pio_instance, &ws2812_program);
     if (offset == (uint)-1) {
-        printf("Error: Failed to load WS2812 program into PIO\n");
         return;
     }
 
@@ -267,7 +265,7 @@ void neopixel_enable_power(void)
     // Set initial color
     neopixel_set_color(COLOR_BOOTING);
 
-    printf("Neopixel fully initialized and powered on pin %d\n", PIN_NEOPIXEL);
+    (void)0; // suppressed init completion log
 }
 
 uint32_t neopixel_rgb_to_grb(uint32_t rgb)
@@ -308,8 +306,6 @@ void neopixel_set_color_with_brightness(uint32_t color, float brightness)
     }
 
     if (!validate_color(color) || !validate_brightness(brightness)) {
-        printf("Warning: Invalid color (0x%06lX) or brightness (%.2f)\n", 
-               (unsigned long)color, brightness);
         return;
     }
 
@@ -317,10 +313,15 @@ void neopixel_set_color_with_brightness(uint32_t color, float brightness)
     const uint32_t dimmed_color = neopixel_apply_brightness(color, brightness);
     const uint32_t grb_color = neopixel_rgb_to_grb(dimmed_color);
     
-    // Send to PIO state machine
-    pio_sm_put_blocking(g_led_controller.pio_instance, 
-                       g_led_controller.state_machine, 
-                       grb_color << WS2812_RGB_SHIFT);
+    // Send to PIO state machine using non-blocking put to avoid stalling
+    // USB/HID hot path. If the PIO/SM FIFO is full this will return
+    // immediately instead of blocking; dropping an LED update is
+    // preferable to delaying HID reports.
+    if (g_led_controller.initialized) {
+        pio_sm_put(g_led_controller.pio_instance,
+                   g_led_controller.state_machine,
+                   grb_color << WS2812_RGB_SHIFT);
+    }
 }
 
 //--------------------------------------------------------------------+
@@ -440,7 +441,7 @@ static system_status_t determine_system_status(void)
 static void apply_status_change(system_status_t new_status)
 {
     if (!validate_status(new_status)) {
-        printf("Error: Invalid status %d\n", new_status);
+        (void)new_status; // suppressed log to avoid blocking hot paths
         return;
     }
 
@@ -472,12 +473,8 @@ static void log_status_change(system_status_t status, uint32_t color, bool breat
 {
     const status_config_t* config = &g_status_configs[status];
     
-    printf("Neopixel status: %s (Color: 0x%06lX, Breathing: %s)\n",
-           config->name, (unsigned long)color, breathing ? "Yes" : "No");
-    printf("USB Device mounted: %s, suspended: %s\n",
-           tud_mounted() ? "Yes" : "No", tud_suspended() ? "Yes" : "No");
-    printf("HID devices - Mouse: %s, Keyboard: %s\n",
-           is_mouse_connected() ? "Yes" : "No", is_keyboard_connected() ? "Yes" : "No");
+    // Intentionally left blank to avoid blocking logs in hot paths.
+    (void)status; (void)color; (void)breathing;
 }
 
 //--------------------------------------------------------------------+
@@ -619,7 +616,7 @@ void neopixel_trigger_usb_reset_pending(void)
     }
 
     neopixel_set_status_override(STATUS_USB_RESET_PENDING);
-    printf("Neopixel: USB reset pending status activated\n");
+    (void)0; // suppressed status reset pending log
 }
 
 void neopixel_trigger_usb_reset_success(void)
@@ -634,7 +631,7 @@ void neopixel_trigger_usb_reset_success(void)
     // Trigger success flash
     trigger_activity_flash_internal(COLOR_USB_RESET_SUCCESS);
     
-    printf("Neopixel: USB reset success flash triggered\n");
+    (void)0; // suppressed status reset success log
 }
 
 void neopixel_trigger_usb_reset_failed(void)
@@ -644,7 +641,7 @@ void neopixel_trigger_usb_reset_failed(void)
     }
 
     neopixel_set_status_override(STATUS_USB_RESET_FAILED);
-    printf("Neopixel: USB reset failed status activated\n");
+    (void)0; // suppressed status reset failed log
 }
 
 //--------------------------------------------------------------------+
@@ -654,14 +651,14 @@ void neopixel_trigger_usb_reset_failed(void)
 void neopixel_set_status_override(system_status_t status)
 {
     if (!g_led_controller.initialized || !validate_status(status)) {
-        printf("Error: Cannot set status override - invalid status %d\n", status);
+        (void)status; // suppressed log to avoid blocking hot paths
         return;
     }
 
     g_led_controller.status_override = status;
     g_led_controller.status_override_active = true;
 
-    printf("Neopixel: Status override set to %s\n", g_status_configs[status].name);
+    (void)0; // suppressed status override log
 }
 
 void neopixel_clear_status_override(void)
@@ -671,7 +668,7 @@ void neopixel_clear_status_override(void)
     }
 
     g_led_controller.status_override_active = false;
-    printf("Neopixel: Status override cleared\n");
+    (void)0; // suppressed status override cleared log
 }
 
 //--------------------------------------------------------------------+
@@ -739,16 +736,27 @@ static void handle_rainbow_effect(void)
         return;
     }
     
-    // Update hue for smooth rainbow transition
-    // Complete rainbow cycle every 300ms for fast, vibrant effect
-    uint32_t elapsed = current_time - g_led_controller.rainbow_start_time;
-    g_led_controller.rainbow_hue = (elapsed * 360 / 300) % 360;
-    
+    // If movement-driven updates have modified the hue, use that value.
+    // Otherwise, auto-advance the hue slowly for a gentle cycle.
+    if (g_led_controller.rainbow_last_update_time_ms == 0) {
+        // No movement yet during this effect - auto-advance
+        uint32_t elapsed = current_time - g_led_controller.rainbow_start_time;
+        // Auto speed is defined in degrees per millisecond
+        float delta_deg = (float)elapsed * RAINBOW_AUTO_SPEED_DEG_PER_MS;
+        g_led_controller.rainbow_hue = ((uint32_t)((g_led_controller.rainbow_hue + (uint32_t)delta_deg) % 360));
+        g_led_controller.rainbow_start_time = current_time;
+    } else {
+        // Clamp last update time to avoid huge jumps
+        if (current_time - g_led_controller.rainbow_last_update_time_ms > 1000) {
+            g_led_controller.rainbow_last_update_time_ms = current_time;
+        }
+    }
+
     // Convert HSV to RGB with full saturation and brightness
     uint32_t rainbow_color = hsv_to_rgb(g_led_controller.rainbow_hue, 255, 255);
-    
+
     // Apply brightness for visibility with slight pulse effect
-    float brightness = 0.6f + 0.3f * sinf((float)elapsed * 0.02f);
+    float brightness = 0.6f + 0.3f * sinf((float)(current_time - g_led_controller.rainbow_start_time) * 0.02f);
     neopixel_set_color_with_brightness(rainbow_color, brightness);
 }
 
@@ -766,4 +774,27 @@ void neopixel_trigger_rainbow_effect(void)
     static uint32_t start_hue = 0;
     start_hue = (start_hue + 120) % 360; // Shift by 120 degrees each time
     g_led_controller.rainbow_hue = start_hue;
+}
+
+void neopixel_rainbow_on_movement(int16_t dx, int16_t dy)
+{
+    if (!g_led_controller.initialized) return;
+
+    // Compute movement magnitude (Manhattan) and scale to hue delta
+    int32_t mag = abs(dx) + abs(dy);
+    if (mag == 0) return;
+
+    // Convert movement to degrees change
+    float delta_deg = (float)mag * RAINBOW_MOVE_SCALE_DEG_PER_UNIT;
+
+    // Update hue (wrap at 360)
+    uint32_t new_hue = (g_led_controller.rainbow_hue + (uint32_t)delta_deg) % 360;
+    g_led_controller.rainbow_hue = new_hue;
+
+    // Mark last movement time so auto-advance uses different logic
+    g_led_controller.rainbow_last_update_time_ms = get_current_time_ms();
+
+    // Activate rainbow effect (short visual feedback period will be handled in status task)
+    g_led_controller.rainbow_effect_active = true;
+    g_led_controller.rainbow_start_time = get_current_time_ms();
 }

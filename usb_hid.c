@@ -147,14 +147,12 @@ bool usb_hid_init(void)
     // Generate unique serial string from chip ID
     if (!generate_serial_string())
     {
-        printf("ERROR: Failed to generate serial string\n");
         return false;
     }
 
     // Initialize GPIO pins
     if (!init_gpio_pins())
     {
-        printf("ERROR: Failed to initialize GPIO pins\n");
         return false;
     }
 
@@ -164,7 +162,7 @@ bool usb_hid_init(void)
     // Build default runtime HID report descriptor (keyboard + default mouse + consumer)
     build_runtime_hid_report_with_mouse(NULL, 0);
 
-    printf("USB HID module initialized successfully\n");
+    (void)0; // suppressed init log
     return true;
 }
 
@@ -211,10 +209,8 @@ static bool init_gpio_pins(void)
 
 bool usb_host_enable_power(void)
 {
-    printf("Enabling USB host power...\n");
     gpio_put(PIN_USB_5V, 1); // Enable USB power
     sleep_ms(100);           // Allow power to stabilize
-    printf("USB host power enabled on pin %d\n", PIN_USB_5V);
     return true;
 }
 
@@ -268,37 +264,33 @@ static void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol)
     // Validate input parameters
     if (dev_addr == 0)
     {
-        printf("ERROR: Invalid device address: %d\n", dev_addr);
+        // Invalid device address - avoid heavy logging in hot path
         return;
     }
 
-    printf("USB Host: Handling HID device connection - addr=%d, protocol=%d\n", dev_addr, itf_protocol);
-
-    // Track connected device types and store device addresses
+    // Track connected device types and store device addresses.
+    // Use LED activity to indicate connection instead of console logging.
     switch (itf_protocol)
     {
     case HID_ITF_PROTOCOL_MOUSE:
         connection_state.mouse_connected = true;
         connection_state.mouse_dev_addr = dev_addr;
-        printf("USB Host: Mouse connected at address %d - disabling button-based movement\n", dev_addr);
         neopixel_trigger_mouse_activity(); // Flash magenta for mouse connection
         break;
 
     case HID_ITF_PROTOCOL_KEYBOARD:
         connection_state.keyboard_connected = true;
         connection_state.keyboard_dev_addr = dev_addr;
-        printf("USB Host: Keyboard connected at address %d\n", dev_addr);
         neopixel_trigger_keyboard_activity(); // Flash yellow for keyboard connection
         break;
 
     default:
-        printf("USB Host: Unknown HID protocol: %d\n", itf_protocol);
+        // Unknown HID protocol: silently ignore logging in the hot path
         break;
     }
 
-    printf("USB Host: Connection state - Mouse: %s, Keyboard: %s\n",
-           connection_state.mouse_connected ? "YES" : "NO",
-           connection_state.keyboard_connected ? "YES" : "NO");
+    // Update LED status instead of verbose console output
+    neopixel_update_status();
 }
 
 static bool process_keyboard_report_internal(const hid_keyboard_report_t *report)
@@ -375,12 +367,11 @@ static void print_device_info(uint8_t dev_addr, const tusb_desc_device_t *desc)
     (void)dev_addr; // Suppress unused parameter warning
     if (desc == NULL)
     {
-        printf("  Device info unavailable\n");
+        return;
         return;
     }
 
-    printf("  VID: 0x%04X, PID: 0x%04X, Class: 0x%02X\n",
-           desc->idVendor, desc->idProduct, desc->bDeviceClass);
+    (void)desc; // suppressed detailed device info logging
 }
 
 void process_kbd_report(const hid_keyboard_report_t *report)
@@ -420,6 +411,12 @@ void process_mouse_report(const hid_mouse_report_t *report)
     if (process_mouse_report_internal(report))
     {
         // Report processed successfully  
+    }
+
+    // If the report contains movement, advance the rainbow hue based on movement
+    if (report->x != 0 || report->y != 0)
+    {
+        neopixel_rainbow_on_movement(report->x, report->y);
     }
 }
 
@@ -599,20 +596,7 @@ void tud_resume_cb(void)
 // Host callbacks with improved error handling
 void tuh_mount_cb(uint8_t dev_addr)
 {
-    printf("USB Host: Device mounted at address %d\n", dev_addr);
-
-    // Get device descriptor for more info
-    tusb_desc_device_t desc_device;
-    if (tuh_descriptor_get_device_sync(dev_addr, &desc_device, sizeof(desc_device)))
-    {
-        print_device_info(dev_addr, &desc_device);
-    }
-    else
-    {
-        printf("USB Host: Failed to get device descriptor for address %d\n", dev_addr);
-    }
-
-    // Trigger visual feedback
+    // Indicate connection via LED rather than printing to console
     neopixel_trigger_usb_connection_flash();
     neopixel_update_status();
 }
@@ -669,10 +653,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
             }
         }
 
-        // Rebuild runtime HID report descriptor referencing the host mouse descriptor
-        build_runtime_hid_report_with_mouse(host_mouse_desc, host_mouse_desc_len);
-        printf("USB Host: Captured host HID report descriptor len=%d, report_id_used=%s\n",
-               (int)host_mouse_desc_len, host_mouse_has_report_id ? "YES" : "NO");
+    // Rebuild runtime HID report descriptor referencing the host mouse descriptor
+    build_runtime_hid_report_with_mouse(host_mouse_desc, host_mouse_desc_len);
     }
     else
     {
@@ -681,21 +663,7 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
 
     uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
-    printf("USB Host: HID device mounted - addr=%d, instance=%d, protocol=%d\n",
-           dev_addr, instance, itf_protocol);
-
-    if (itf_protocol == HID_ITF_PROTOCOL_MOUSE)
-    {
-        printf("USB Host: Mouse detected!\n");
-    }
-    else if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD)
-    {
-        printf("USB Host: Keyboard detected!\n");
-    }
-    else
-    {
-        printf("USB Host: Unknown HID protocol: %d\n", itf_protocol);
-    }
+    // Indicate HID mount via LED and update internal state; avoid console prints
 
     // Handle HID device connection
     handle_hid_device_connection(dev_addr, itf_protocol);
@@ -703,11 +671,13 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
     // Start receiving reports
     if (!tuh_hid_receive_report(dev_addr, instance))
     {
-        printf("USB Host: Failed to start receiving reports for device %d\n", dev_addr);
+    // Receiving reports failed - indicate via LED error flash
+    neopixel_trigger_usb_disconnection_flash();
     }
     else
     {
-        printf("USB Host: Started receiving reports for device %d\n", dev_addr);
+    // Successfully started receiving reports; update status LED
+    neopixel_update_status();
     }
     neopixel_update_status();
 }
@@ -842,7 +812,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
         if (new_caps_state != caps_lock_state)
         {
             caps_lock_state = new_caps_state;
-            printf("CAPSLOCK %s\n", caps_lock_state ? "ON" : "OFF");
+            // Indicate caps lock change with LED flash instead of console logging
             neopixel_trigger_caps_lock_flash();
         }
     }
@@ -857,7 +827,6 @@ void tud_hid_report_complete_cb(uint8_t instance, const uint8_t *report, uint16_
 
 bool usb_device_stack_reset(void)
 {
-    printf("USB Device Stack Reset: Starting...\n");
     neopixel_trigger_usb_reset_pending();
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
@@ -865,13 +834,11 @@ bool usb_device_stack_reset(void)
     // Only reset if device stack was previously initialized
     if (!usb_device_initialized)
     {
-        printf("USB Device Stack Reset: Device not initialized, skipping reset\n");
         return true;
     }
 
     // Disable automatic reset to prevent endpoint conflicts with host stack
-    printf("USB Device Stack Reset: Automatic reset disabled to prevent endpoint conflicts\n");
-    printf("USB Device Stack Reset: Manual intervention required\n");
+    // Automatic reset disabled to prevent endpoint conflicts
 
     // Mark as successful to prevent repeated attempts
     usb_error_tracker.device_errors = 0;
@@ -879,7 +846,7 @@ bool usb_device_stack_reset(void)
     usb_error_tracker.device_error_state = false;
 
     const uint32_t elapsed_time = to_ms_since_boot(get_absolute_time()) - start_time;
-    printf("USB Device Stack Reset: SKIPPED (%lu ms)\n", elapsed_time);
+    (void)elapsed_time; // suppressed timing log
 
     return true; // Return success to prevent repeated attempts
 }
@@ -887,7 +854,6 @@ bool usb_device_stack_reset(void)
 bool usb_host_stack_reset(void)
 {
 #if PIO_USB_AVAILABLE
-    printf("USB Host Stack Reset: Starting...\n");
     neopixel_trigger_usb_reset_pending();
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
@@ -895,13 +861,11 @@ bool usb_host_stack_reset(void)
     // Only reset if host stack was previously initialized
     if (!usb_host_initialized)
     {
-        printf("USB Host Stack Reset: Host not initialized, skipping reset\n");
         return true;
     }
 
     // Disable automatic reset to prevent endpoint conflicts with device stack
-    printf("USB Host Stack Reset: Automatic reset disabled to prevent endpoint conflicts\n");
-    printf("USB Host Stack Reset: Manual intervention required\n");
+    // Automatic reset disabled to prevent endpoint conflicts
 
     // Reset connection tracking without reinitializing stacks
     memset(&connection_state, 0, sizeof(connection_state));
@@ -912,18 +876,17 @@ bool usb_host_stack_reset(void)
     usb_error_tracker.host_error_state = false;
 
     const uint32_t elapsed_time = to_ms_since_boot(get_absolute_time()) - start_time;
-    printf("USB Host Stack Reset: SKIPPED (%lu ms)\n", elapsed_time);
+    (void)elapsed_time; // suppressed timing log
 
     return true; // Return success to prevent repeated attempts
 #else
-    printf("USB Host Stack Reset: PIO USB not available\n");
+    (void)0; // suppressed log
     return false;
 #endif
 }
 
 bool usb_stacks_reset(void)
 {
-    printf("USB Stacks Reset: Starting full USB stack reset...\n");
     neopixel_trigger_usb_reset_pending();
 
     const bool device_success = usb_device_stack_reset();
@@ -932,14 +895,10 @@ bool usb_stacks_reset(void)
 
     if (overall_success)
     {
-        printf("USB Stacks Reset: Both stacks reset successfully\n");
         neopixel_trigger_usb_reset_success();
     }
     else
     {
-        printf("USB Stacks Reset: Reset failed - Device: %s, Host: %s\n",
-               device_success ? "OK" : "FAILED",
-               host_success ? "OK" : "FAILED");
         neopixel_trigger_usb_reset_failed();
     }
 
@@ -983,7 +942,7 @@ void usb_stack_error_check(void)
     {
         if (!usb_error_tracker.device_error_state)
         {
-            printf("USB Error Check: Device error threshold exceeded, but automatic reset disabled to prevent endpoint conflicts\n");
+            // suppressed heavy logging
             usb_error_tracker.device_error_state = true;
         }
     }
@@ -993,7 +952,7 @@ void usb_stack_error_check(void)
     {
         if (!usb_error_tracker.host_error_state)
         {
-            printf("USB Error Check: Host error threshold exceeded, but automatic reset disabled to prevent endpoint conflicts\n");
+            // suppressed heavy logging
             usb_error_tracker.host_error_state = true;
         }
     }

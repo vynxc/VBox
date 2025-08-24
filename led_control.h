@@ -63,6 +63,8 @@ void neopixel_trigger_usb_reset_failed(void);
 void neopixel_set_status_override(system_status_t status);
 void neopixel_clear_status_override(void);
 void neopixel_trigger_rainbow_effect(void);
+// Advance the rainbow based on movement delta (x,y). Call from HID path when movement observed.
+void neopixel_rainbow_on_movement(int16_t dx, int16_t dy);
 
 // Utility functions
 uint32_t neopixel_rgb_to_grb(uint32_t rgb);
