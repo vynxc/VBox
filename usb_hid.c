@@ -11,10 +11,38 @@
 #include "kmbox_serial_handler.h" // Include the header for serial handling
 #include "state_management.h"   // Include the header for state management
 #include "watchdog.h"           // Include the header for watchdog management
+#include <string.h>             // For strcpy, strlen, memset
 
 uint16_t attached_vid = 0;
 uint16_t attached_pid = 0;
 bool attached_has_serial = false;
+
+// Dynamic string descriptor storage
+static char attached_manufacturer[64] = "";
+static char attached_product[64] = "";
+static char attached_serial[32] = "";
+static bool string_descriptors_fetched = false;
+
+#define LANGUAGE_ID 0x0409  // English (US)
+
+// UTF-16 to UTF-8 conversion helper for string descriptors
+static void utf16_to_utf8(uint16_t *utf16_buf, size_t utf16_len, char *utf8_buf, size_t utf8_len) {
+    if (!utf16_buf || !utf8_buf || utf8_len == 0) return;
+    
+    size_t utf8_pos = 0;
+    // Skip the descriptor header (first 2 bytes)
+    for (size_t i = 1; i < utf16_len / 2 && utf8_pos < utf8_len - 1; i++) {
+        uint16_t utf16_char = utf16_buf[i];
+        // Simple ASCII conversion (most device strings are ASCII)
+        if (utf16_char <= 0x7F) {
+            utf8_buf[utf8_pos++] = (char)utf16_char;
+        } else {
+            // For non-ASCII, use '?' as placeholder
+            utf8_buf[utf8_pos++] = '?';
+        }
+    }
+    utf8_buf[utf8_pos] = '\0';
+}
 
 // Function to set the VID and PID of the attached device
 void set_attached_device_vid_pid(uint16_t vid, uint16_t pid) {
@@ -48,6 +76,60 @@ void force_usb_reenumeration() {
     sleep_ms(250);
     
     printf("USB re-enumeration complete\\n");
+}
+
+// Function to fetch string descriptors from attached device
+static void fetch_device_string_descriptors(uint8_t dev_addr) {
+    // Reset string descriptors
+    memset(attached_manufacturer, 0, sizeof(attached_manufacturer));
+    memset(attached_product, 0, sizeof(attached_product));
+    memset(attached_serial, 0, sizeof(attached_serial));
+    string_descriptors_fetched = false;
+    
+    // Temporary buffers for UTF-16 strings
+    uint16_t temp_manufacturer[32];
+    uint16_t temp_product[48];
+    uint16_t temp_serial[16];
+    
+    // Get manufacturer string
+    if (tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, temp_manufacturer, sizeof(temp_manufacturer)) == XFER_RESULT_SUCCESS) {
+        utf16_to_utf8(temp_manufacturer, sizeof(temp_manufacturer), attached_manufacturer, sizeof(attached_manufacturer));
+        printf("Fetched manufacturer: %s\\n", attached_manufacturer);
+    } else {
+        strcpy(attached_manufacturer, MANUFACTURER_STRING);  // Fallback
+        printf("Failed to fetch manufacturer, using fallback: %s\\n", attached_manufacturer);
+    }
+    
+    // Get product string
+    if (tuh_descriptor_get_product_string_sync(dev_addr, LANGUAGE_ID, temp_product, sizeof(temp_product)) == XFER_RESULT_SUCCESS) {
+        utf16_to_utf8(temp_product, sizeof(temp_product), attached_product, sizeof(attached_product));
+        printf("Fetched product: %s\\n", attached_product);
+    } else {
+        strcpy(attached_product, PRODUCT_STRING);  // Fallback
+        printf("Failed to fetch product, using fallback: %s\\n", attached_product);
+    }
+    
+    // Get serial string (optional)
+    if (tuh_descriptor_get_serial_string_sync(dev_addr, LANGUAGE_ID, temp_serial, sizeof(temp_serial)) == XFER_RESULT_SUCCESS) {
+        utf16_to_utf8(temp_serial, sizeof(temp_serial), attached_serial, sizeof(attached_serial));
+        printf("Fetched serial: %s\\n", attached_serial);
+        attached_has_serial = (strlen(attached_serial) > 0);
+    } else {
+        attached_has_serial = false;
+        printf("No serial number available\\n");
+    }
+    
+    string_descriptors_fetched = true;
+}
+
+// Function to reset string descriptors when device is disconnected
+static void reset_device_string_descriptors(void) {
+    memset(attached_manufacturer, 0, sizeof(attached_manufacturer));
+    memset(attached_product, 0, sizeof(attached_product));
+    memset(attached_serial, 0, sizeof(attached_serial));
+    string_descriptors_fetched = false;
+    attached_has_serial = false;
+    printf("String descriptors reset\\n");
 }
 
 // Function to get the VID of the attached device
@@ -706,10 +788,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
     tuh_vid_pid_get(dev_addr, &vid, &pid);
     printf("HID device mounted, VID: %04x, PID: %04x\n", vid, pid);
     
-    // For now, assume no serial number - we could enhance this later
-    // by parsing the device descriptor to check iSerialNumber field
-    attached_has_serial = false;
-    printf("Device serial number detection: disabled for simplicity\n");
+    // Fetch string descriptors from the attached device
+    fetch_device_string_descriptors(dev_addr);
     
     set_attached_device_vid_pid(vid, pid);
 
@@ -767,6 +847,9 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
 {
     (void)instance; // Suppress unused parameter warning
+
+    // Reset string descriptors when device is disconnected
+    reset_device_string_descriptors();
 
     // Handle device disconnection
     handle_device_disconnection(dev_addr);
@@ -1170,9 +1253,31 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
             return NULL;
         }
 
-        // Use dynamic serial string for serial number index
-        if (index == STRING_DESC_SERIAL_IDX) {
-            str = get_dynamic_serial_string();
+        // Use dynamic string descriptors if available
+        if (string_descriptors_fetched) {
+            switch (index) {
+                case STRING_DESC_MANUFACTURER_IDX:
+                    str = attached_manufacturer;
+                    break;
+                case STRING_DESC_PRODUCT_IDX:
+                    str = attached_product;
+                    break;
+                case STRING_DESC_SERIAL_IDX:
+                    if (attached_has_serial && strlen(attached_serial) > 0) {
+                        str = attached_serial;
+                    } else {
+                        str = get_dynamic_serial_string();
+                    }
+                    break;
+                default:
+                    // Use default for other indices
+                    break;
+            }
+        } else {
+            // Fallback to default strings if not fetched yet
+            if (index == STRING_DESC_SERIAL_IDX) {
+                str = get_dynamic_serial_string();
+            }
         }
 
         // Convert ASCII string to UTF-16 and get character count

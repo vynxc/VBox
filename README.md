@@ -5,7 +5,9 @@ A sophisticated USB HID device firmware for the Raspberry Pi Pico (RP2040) and P
 ## Features
 
 - **Dual USB Stack**: Simultaneous USB device (HID) and USB host support using PIO USB
+- **Dynamic VID/PID Mirroring**: Automatically adopts the VID/PID of connected USB devices for transparent passthrough
 - **KMBox Serial Commands**: Compatible serial protocol for mouse/keyboard control
+- **Full HID Passthrough**: Complete mouse and keyboard input forwarding including side buttons and scroll wheels
 - **Dual Core Architecture**: Core 0 handles USB device tasks, Core 1 handles USB host tasks
 - **Hardware Watchdog**: Robust system monitoring and recovery
 - **Visual Status Indicators**: Onboard LED and WS2812 NeoPixel status display
@@ -16,9 +18,7 @@ A sophisticated USB HID device firmware for the Raspberry Pi Pico (RP2040) and P
 
 ### Supported Boards
 
-- Raspberry Pi Pico (RP2040)
-- Raspberry Pi Pico 2 (RP2350)
-- Adafruit Feather RP2040 USB Host
+Targets the Adafruit Feather RP2040 USB Host by default, you can update the pin macros to use any pico or pico2
 
 ### Pin Configuration
 
@@ -99,19 +99,51 @@ If you have `picotool` installed, the build script will automatically attempt to
 3. Copy `PIOKMbox.uf2` to the mounted drive
 4. The device will automatically reboot and run the firmware
 
-### Method 3: Debug Probe Flashing
+## Usage
 
-For development with a debug probe:
+### Dynamic VID/PID Mirroring
+
+The PIOKMBox features intelligent device mirroring that automatically adopts the identity of connected USB HID devices:
+
+#### How It Works
+
+1. **Automatic Detection**: When you connect a mouse or keyboard to the USB host port, the device automatically detects the VID (Vendor ID) and PID (Product ID)
+2. **String Descriptor Mirroring**: The device fetches and mirrors the manufacturer, product, and serial number strings from the connected device
+3. **Dynamic Re-enumeration**: The PIOKMBox disconnects from the PC and re-enumerates with the detected VID/PID and string descriptors
+4. **Transparent Passthrough**: To the PC, it appears as if the original device is directly connected with identical identity
+5. **Full Compatibility**: All device features are preserved, including side buttons, scroll wheels, and special keys
+
+#### Example
 
 ```bash
-# Flash RP2040
-openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "program PIOKMbox.elf verify reset exit"
+# Before connecting a device
+$ lsusb
+... 9981:4001 Hurricane PIOKM Box
 
-# Flash RP2350
-openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "program PIOKMbox.elf verify reset exit"
+# After connecting a Logitech mouse
+$ lsusb  
+... 046d:c539 Logitech Inc. USB Receiver
+
+# System sees identical device identity
+$ system_profiler SPUSBDataType | grep -A 5 "046d"
+Product ID: 0xc539
+Vendor ID: 0x046d  (Logitech Inc.)
+Manufacturer: Logitech
 ```
 
-## Usage
+#### Benefits
+
+- **Complete Device Cloning**: Mirrors VID/PID, manufacturer, product name, and serial number for perfect identity matching
+- **Anti-Detection**: The device appears as the original hardware to the PC and any detection software
+- **Full Feature Support**: All buttons and features work exactly as the original device
+- **Automatic Configuration**: No manual setup required - just plug and play
+- **Wide Compatibility**: Works with any USB HID mouse or keyboard
+
+#### Fallback Behavior
+
+- If no device is connected, uses default VID:PID `9981:4001`
+- If device detection fails, gracefully falls back to default identity
+- Supports hot-plugging - VID/PID updates when devices are swapped
 
 ### Serial Communication
 
@@ -190,6 +222,8 @@ PIOKMbox/
 ### Key Components
 
 - **Dual Core Architecture**: Core 0 handles USB device and main application loop, Core 1 dedicated to USB host tasks
+- **Dynamic USB Descriptors**: Runtime generation of device descriptors based on connected devices
+- **Smart Re-enumeration**: Intelligent USB re-enumeration only when VID/PID changes to prevent enumeration loops
 - **Watchdog System**: Hardware and software watchdog with inter-core monitoring
 - **State Management**: Centralized system state with proper initialization sequencing
 - **KMBox Protocol**: Complete implementation of KMBox serial command protocol

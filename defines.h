@@ -5,14 +5,20 @@
  * the PIOKMbox project, eliminating duplicates and providing clear categorization.
  */
 
-#ifndef DEFINES_CONSOLIDATED_H
-#define DEFINES_CONSOLIDATED_H
+#ifndef DEFINES_H
+#define DEFINES_H
 
 //--------------------------------------------------------------------+
 // HARDWARE CONFIGURATION
 //--------------------------------------------------------------------+
+#if PICO_PLATFORM == rp2040
+#define DEFAULT_CPU_FREQ 240000
+#elif PICO_PLATFORM == rp2350
+#define DEFAULT_CPU_FREQ 120000
+#endif
+
 #ifndef CPU_FREQ
-#define CPU_FREQ 120000
+#define CPU_FREQ DEFAULT_CPU_FREQ
 #endif
 
 // Pin definitions
@@ -43,9 +49,6 @@
 // Core assignment
 #define USB_DEVICE_CORE         0       // Core 0 handles USB device tasks
 #define USB_HOST_CORE           1       // Core 1 handles USB host tasks
-
-// System clock configuration
-#define PIO_USB_SYSTEM_CLOCK_KHZ CPU_FREQ // 120MHz system clock required for PIO USB
 
 //--------------------------------------------------------------------+
 // TIMING CONSTANTS

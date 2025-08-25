@@ -162,12 +162,9 @@ static bool initialize_system(void) {
     
     printf("PICO PIO KMBox - Starting initialization...\n");
     printf("Neopixel pins initialized (power OFF for cold boot stability)\n");
-    
-#if PIO_USB_AVAILABLE
-    // Set system clock to 120MHz (required for PIO USB - must be multiple of 12MHz)
-    printf("Setting system clock to %d kHz...\n", PIO_USB_SYSTEM_CLOCK_KHZ);
-    if (!set_sys_clock_khz(PIO_USB_SYSTEM_CLOCK_KHZ, true)) {
-        printf("CRITICAL: Failed to set system clock to %d kHz\n", PIO_USB_SYSTEM_CLOCK_KHZ);
+    printf("Setting system clock to %d kHz...\n", CPU_FREQ);
+    if (!set_sys_clock_khz(CPU_FREQ, true)) {
+        printf("CRITICAL: Failed to set system clock to %d kHz\n", CPU_FREQ);
         return false;
     }
     
@@ -175,8 +172,7 @@ static bool initialize_system(void) {
     sleep_ms(100);  // Allow clock to stabilize
     stdio_init_all();
     sleep_ms(100);  // Allow UART to stabilize
-    printf("System clock set successfully to %d kHz\n", PIO_USB_SYSTEM_CLOCK_KHZ);
-#endif
+    printf("System clock set successfully to %d kHz\n", CPU_FREQ);
     
     // Configure UART0 for debug output with non-blocking operation
     uart_set_fifo_enabled(uart0, true);  // Enable FIFO for better performance
