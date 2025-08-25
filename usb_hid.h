@@ -11,6 +11,7 @@
 #include "class/hid/hid.h"
 #include "class/hid/hid_device.h"
 #include "class/hid/hid_host.h"
+#include "kmbox_serial_handler.h"
 
 //--------------------------------------------------------------------+
 // HID REPORT DEFINITIONS
@@ -91,6 +92,25 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const* report, uint16_t len);
 
 // HID host callbacks
+extern uint16_t attached_vid;
+extern uint16_t attached_pid;
+
+// Function to get the VID of the attached device
+uint16_t get_attached_vid(void);
+
+// Function to get the PID of the attached device
+uint16_t get_attached_pid(void);
+
+// Function to set the VID and PID of the attached device
+void set_attached_device_vid_pid(uint16_t vid, uint16_t pid);
+
+// Function to get dynamic serial string
+const char* get_dynamic_serial_string(void);
+
+// Function to force USB re-enumeration
+void force_usb_reenumeration(void);
+
+// TinyUSB Host callbacks
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len);
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance);
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len);

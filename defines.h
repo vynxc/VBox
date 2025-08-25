@@ -152,6 +152,10 @@
 #define CONFIG_TOTAL_LEN                (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
 #define EPNUM_HID                       HID_ENDPOINT_ADDRESS
 
+// HID report descriptor length is always patched at runtime to match the
+// constructed runtime HID report descriptor which mirrors the attached host
+// mouse. No compile-time static length is used.
+
 //--------------------------------------------------------------------+
 // HID CONFIGURATION
 //--------------------------------------------------------------------+

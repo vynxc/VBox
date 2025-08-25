@@ -8,15 +8,67 @@
 #include "lib/kmbox-commands/kmbox_commands.h"
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
-#include "hardware/gpio.h"
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
+#include "kmbox_serial_handler.h" // Include the header for serial handling
+#include "state_management.h"   // Include the header for state management
+#include "watchdog.h"           // Include the header for watchdog management
 
-#if PIO_USB_AVAILABLE
-#include "pio_usb.h"
-#endif
-#include <stdlib.h>
+uint16_t attached_vid = 0;
+uint16_t attached_pid = 0;
+bool attached_has_serial = false;
+
+// Function to set the VID and PID of the attached device
+void set_attached_device_vid_pid(uint16_t vid, uint16_t pid) {
+    // Only update and re-enumerate if VID/PID has actually changed
+    if (attached_vid != vid || attached_pid != pid) {
+        attached_vid = vid;
+        attached_pid = pid;
+        attached_has_serial = false; // Default to no serial number unless device has one
+        printf("Updated attached device VID:PID to %04x:%04x\\n", vid, pid);
+        
+        // Force USB re-enumeration to update descriptor
+        force_usb_reenumeration();
+    } else {
+        printf("VID:PID unchanged (%04x:%04x), skipping re-enumeration\\n", vid, pid);
+    }
+}
+
+void force_usb_reenumeration() {
+    printf("Forcing USB re-enumeration with new descriptor...\\n");
+    
+    // Disconnect from USB host
+    tud_disconnect();
+    
+    // Wait for host to recognize disconnection (250ms minimum for Windows/macOS)
+    sleep_ms(500);
+    
+    // Reconnect with new descriptor
+    tud_connect();
+    
+    // Wait for reconnection
+    sleep_ms(250);
+    
+    printf("USB re-enumeration complete\\n");
+}
+
+// Function to get the VID of the attached device
+uint16_t get_attached_vid(void) {
+    return attached_vid;
+}
+
+// Function to get the PID of the attached device
+uint16_t get_attached_pid(void) {
+    return attached_pid;
+}
+
+// Function to get dynamic serial string
+const char* get_dynamic_serial_string() {
+    static char dynamic_serial[64];
+    if (attached_vid && attached_pid) {
+        snprintf(dynamic_serial, sizeof(dynamic_serial), "PIOKMbox_%04X_%04X", attached_vid, attached_pid);
+        return dynamic_serial;
+    }
+    return "PIOKMbox_v1.0";
+}
 
 // Error tracking structure with better organization
 typedef struct
@@ -321,6 +373,14 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
         return false;
     }
 
+    // Check if USB device is ready to send reports
+    if (!tud_mounted() || !tud_ready())
+    {
+        printf("Mouse report dropped: USB device not ready (mounted=%d, ready=%d)\\n", 
+               tud_mounted(), tud_ready());
+        return false;
+    }
+
     // Fast button validation using bitwise AND
     uint8_t valid_buttons = report->buttons & 0x1F; // Keep first 5 bits (L/R/M/S1/S2 buttons)
 
@@ -331,6 +391,7 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     if (report->x != 0 || report->y != 0)
     {
         kmbox_add_mouse_movement(report->x, report->y);
+        printf("Mouse movement: x=%d, y=%d\\n", report->x, report->y);
     }
 
     // Add physical wheel movement
@@ -350,14 +411,24 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     int8_t final_y = y;
     int8_t final_wheel = wheel;
 
+    // Check if HID interface is ready
+    if (!tud_hid_ready())
+    {
+        printf("Mouse report dropped: HID interface not ready\\n");
+        return false;
+    }
+
     // Fast path: skip ready check for maximum performance
     bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
     if (success)
     {
+        printf("Mouse report sent: buttons=0x%02x, x=%d, y=%d, wheel=%d\\n", 
+               buttons_to_send, final_x, final_y, final_wheel);
         return true;
     }
     else
     {
+        printf("Mouse report FAILED to send\\n");
         return false;
     }
 }
@@ -560,7 +631,7 @@ void send_hid_report(uint8_t report_id)
 void hid_host_task(void)
 {
     // This function can be called from core0 if needed for additional host processing
-    // The main host task loop runs on core1 in PIOKMbox.c
+    // The main host task runs on core1 in PIOKMbox.c
 }
 
 // Device callbacks with improved error handling
@@ -631,6 +702,17 @@ void tuh_umount_cb(uint8_t dev_addr)
 // HID host callbacks with improved validation
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_report, uint16_t desc_len)
 {
+    uint16_t vid, pid;
+    tuh_vid_pid_get(dev_addr, &vid, &pid);
+    printf("HID device mounted, VID: %04x, PID: %04x\n", vid, pid);
+    
+    // For now, assume no serial number - we could enhance this later
+    // by parsing the device descriptor to check iSerialNumber field
+    attached_has_serial = false;
+    printf("Device serial number detection: disabled for simplicity\n");
+    
+    set_attached_device_vid_pid(vid, pid);
+
     // Capture host report descriptor for later mirroring
     host_mouse_has_report_id = false;
     host_mouse_report_id = 0;
@@ -960,29 +1042,32 @@ void usb_stack_error_check(void)
 }
 
 // Device Descriptors
-tusb_desc_device_t const desc_device =
-    {
-        .bLength = sizeof(tusb_desc_device_t),
-        .bDescriptorType = TUSB_DESC_DEVICE,
-        .bcdUSB = USB_BCD_VERSION,
-        .bDeviceClass = 0x00,
-        .bDeviceSubClass = 0x00,
-        .bDeviceProtocol = 0x00,
-        .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
-
-        .idVendor = USB_VENDOR_ID,
-        .idProduct = USB_PRODUCT_ID,
-        .bcdDevice = USB_DEVICE_VERSION,
-
-        .iManufacturer = STRING_DESC_MANUFACTURER_IDX,
-        .iProduct = STRING_DESC_PRODUCT_IDX,
-        .iSerialNumber = STRING_DESC_SERIAL_IDX,
-
-        .bNumConfigurations = USB_NUM_CONFIGURATIONS};
-
 // Invoked when received GET DEVICE DESCRIPTOR
-uint8_t const *tud_descriptor_device_cb(void)
+// Application return pointer to descriptor
+uint8_t const * tud_descriptor_device_cb(void)
 {
+    static tusb_desc_device_t desc_device;
+
+    desc_device = (tusb_desc_device_t) {
+        .bLength            = sizeof(tusb_desc_device_t),
+        .bDescriptorType    = TUSB_DESC_DEVICE,
+        .bcdUSB             = 0x0200,
+        .bDeviceClass       = 0x00,
+        .bDeviceSubClass    = 0x00,
+        .bDeviceProtocol    = 0x00,
+        .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+
+        .idVendor           = (get_attached_vid() != 0) ? get_attached_vid() : USB_VENDOR_ID,
+        .idProduct          = (get_attached_pid() != 0) ? get_attached_pid() : USB_PRODUCT_ID,
+        .bcdDevice          = 0x0100,
+
+        .iManufacturer      = 0x01,
+        .iProduct           = 0x02,
+        .iSerialNumber      = attached_has_serial ? 0x03 : 0x00,
+
+        .bNumConfigurations = 0x01
+    };
+
     return (uint8_t const *)&desc_device;
 }
 
@@ -1083,6 +1168,11 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
         if (str == NULL)
         {
             return NULL;
+        }
+
+        // Use dynamic serial string for serial number index
+        if (index == STRING_DESC_SERIAL_IDX) {
+            str = get_dynamic_serial_string();
         }
 
         // Convert ASCII string to UTF-16 and get character count
