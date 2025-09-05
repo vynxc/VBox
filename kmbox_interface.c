@@ -323,6 +323,7 @@ static void process_uart(void)
 }
 
 // Process SPI data
+// Not really implemented
 static void process_spi(void)
 {
     // Process any available SPI data

@@ -43,11 +43,12 @@ typedef struct {
     uint32_t usb_reset_cooldown_start;
 } main_loop_state_t;
 
-typedef struct {
-    bool button_pressed;
-    uint32_t current_time;
-    uint32_t hold_duration;
-} button_state_t;
+// Remove unused structures
+//typedef struct {
+//    bool button_pressed;
+//    uint32_t current_time;
+//    uint32_t hold_duration;
+//} button_state_t;
 
 //--------------------------------------------------------------------+
 // Constants and Configuration
@@ -68,10 +69,6 @@ static bool initialize_usb_device(void);
 static void main_application_loop(void);
 
 // Button handling functions
-static button_state_t get_button_state(uint32_t current_time);
-static void handle_button_press_start(system_state_t* state, uint32_t current_time);
-static void handle_button_held(system_state_t* state, uint32_t current_time);
-static void handle_button_release(const system_state_t* state, uint32_t hold_duration);
 static void process_button_input(system_state_t* state, uint32_t current_time);
 
 // Reporting functions
@@ -129,21 +126,24 @@ static void core1_main(void) {
 }
 
 static void core1_task_loop(void) {
-    core1_state_t state = {0};  // Local state instead of static
-
+    // Optimize heartbeat checking - use larger counter intervals
+    uint32_t heartbeat_counter = 0;
+    uint32_t last_heartbeat_ms = 0;
+    
+    // Performance optimization: reduce heartbeat frequency checks
+    const uint32_t heartbeat_check_threshold = CORE1_HEARTBEAT_CHECK_LOOPS * 4; // 4x less frequent
+    
     while (true) {
         tuh_task();
         
-        // Check heartbeat timing less frequently
-        if (++state.heartbeat_counter >= CORE1_HEARTBEAT_CHECK_LOOPS) {
+        // Heartbeat check optimization - much less frequent timing calls
+        if (++heartbeat_counter >= heartbeat_check_threshold) {
             const uint32_t current_time = to_ms_since_boot(get_absolute_time());
-            if (system_state_should_run_task(NULL, current_time,
-                                            state.last_heartbeat_ms,
-                                            WATCHDOG_HEARTBEAT_INTERVAL_MS)) {
+            if ((current_time - last_heartbeat_ms) >= WATCHDOG_HEARTBEAT_INTERVAL_MS) {
                 watchdog_core1_heartbeat();
-                state.last_heartbeat_ms = current_time;
+                last_heartbeat_ms = current_time;
             }
-            state.heartbeat_counter = 0;
+            heartbeat_counter = 0;
         }
     }
 }
@@ -213,59 +213,39 @@ static bool initialize_usb_device(void) {
 // Button Handling Functions
 //--------------------------------------------------------------------+
 
-static button_state_t get_button_state(uint32_t current_time) {
-    button_state_t state = {
-        .button_pressed = !gpio_get(PIN_BUTTON), // Button is active low
-        .current_time = current_time,
-        .hold_duration = 0
-    };
-    return state;
-}
-
-static void handle_button_press_start(system_state_t* state, uint32_t current_time) {
-    state->last_button_press_time = current_time;
-}
-
-static void handle_button_held(system_state_t* state, uint32_t current_time) {
-    if (is_time_elapsed(current_time, state->last_button_press_time, BUTTON_HOLD_TRIGGER_MS)) {
-        printf("Button held - triggering USB reset\n");
-        usb_stacks_reset();
-        state->usb_reset_cooldown = true;
-        state->usb_reset_cooldown_start = current_time;
-    }
-}
-
-static void handle_button_release(const system_state_t* state, uint32_t hold_duration) {
-    (void)state; // Suppress unused parameter warning
-    if (hold_duration < BUTTON_HOLD_TRIGGER_MS) {
-    }
-}
-
 static void process_button_input(system_state_t* state, uint32_t current_time) {
-    const button_state_t button = get_button_state(current_time);
+    // Performance optimization: single GPIO read per call
+    const bool button_currently_pressed = !gpio_get(PIN_BUTTON); // Button is active low
 
-    // Handle cooldown after USB reset
+    // Handle cooldown after USB reset - early exit for performance
     if (state->usb_reset_cooldown) {
         if (is_time_elapsed(current_time, state->usb_reset_cooldown_start, USB_RESET_COOLDOWN_MS)) {
             state->usb_reset_cooldown = false;
         }
-        state->button_pressed_last = button.button_pressed;
+        state->button_pressed_last = button_currently_pressed;
         return; // Skip button processing during cooldown
     }
 
-    if (button.button_pressed && !state->button_pressed_last) {
-        // Button just pressed
-        handle_button_press_start(state, current_time);
-    } else if (button.button_pressed && state->button_pressed_last) {
-        // Button being held
-        handle_button_held(state, current_time);
-    } else if (!button.button_pressed && state->button_pressed_last) {
-        // Button just released
-        const uint32_t hold_duration = current_time - state->last_button_press_time;
-        handle_button_release(state, hold_duration);
+    // Optimized state machine - avoid redundant checks
+    if (button_currently_pressed) {
+        if (!state->button_pressed_last) {
+            // Button just pressed
+            state->last_button_press_time = current_time;
+        } else {
+            // Button being held - check for reset trigger
+            if (is_time_elapsed(current_time, state->last_button_press_time, BUTTON_HOLD_TRIGGER_MS)) {
+                printf("Button held - triggering USB reset\n");
+                usb_stacks_reset();
+                state->usb_reset_cooldown = true;
+                state->usb_reset_cooldown_start = current_time;
+            }
+        }
+    } else if (state->button_pressed_last) {
+        // Button just released - could add short press handling here if needed
+        // For now, no action on short press
     }
 
-    state->button_pressed_last = button.button_pressed;
+    state->button_pressed_last = button_currently_pressed;
 }
 
 //--------------------------------------------------------------------+
@@ -316,6 +296,18 @@ static void main_application_loop(void) {
     const uint32_t visual_interval = VISUAL_TASK_INTERVAL_MS;
     const uint32_t error_interval = ERROR_CHECK_INTERVAL_MS;
     const uint32_t button_interval = BUTTON_DEBOUNCE_MS;
+    const uint32_t status_report_interval = WATCHDOG_STATUS_REPORT_INTERVAL_MS;
+
+    // Performance optimization: reduce time sampling frequency
+    uint32_t current_time = to_ms_since_boot(get_absolute_time());
+    uint16_t loop_counter = 0;
+    
+    // Batch time checks with bit flags for efficiency
+    uint8_t task_flags = 0;
+    #define WATCHDOG_FLAG   (1 << 0)
+    #define VISUAL_FLAG     (1 << 1)
+    #define BUTTON_FLAG     (1 << 2)
+    #define STATUS_FLAG     (1 << 3)
 
     while (true) {
         // TinyUSB device task - highest priority
@@ -325,41 +317,51 @@ static void main_application_loop(void) {
         // KMBox serial task - high priority for responsiveness
         kmbox_serial_task();
         
-        // Get time once per loop iteration
-        const uint32_t current_time = to_ms_since_boot(get_absolute_time());
+        // Sample time less frequently to reduce overhead
+        if (++loop_counter >= 32) {  // Sample every 32 loops
+            current_time = to_ms_since_boot(get_absolute_time());
+            loop_counter = 0;
+            
+            // Batch all time checks into flags for efficiency
+            task_flags = 0;
+            if ((current_time - state->last_watchdog_time) >= watchdog_interval) {
+                task_flags |= WATCHDOG_FLAG;
+            }
+            if ((current_time - state->last_visual_time) >= visual_interval) {
+                task_flags |= VISUAL_FLAG;
+            }
+            if ((current_time - state->last_button_time) >= button_interval) {
+                task_flags |= BUTTON_FLAG;
+            }
+            if ((current_time - state->watchdog_status_timer) >= status_report_interval) {
+                task_flags |= STATUS_FLAG;
+            }
+            
+            // Error check optimization - only when other tasks run
+            if (task_flags && (current_time - state->last_error_check_time) >= error_interval) {
+                state->last_error_check_time = current_time;
+            }
+        }
         
-        // Combine time checks to reduce function call overhead
-        const uint32_t time_since_watchdog = current_time - state->last_watchdog_time;
-        const uint32_t time_since_visual = current_time - state->last_visual_time;
-        const uint32_t time_since_button = current_time - state->last_button_time;
-        
-        // Watchdog tasks - controlled frequency
-        if (time_since_watchdog >= watchdog_interval) {
+        // Execute tasks based on flags (avoids repeated time checks)
+        if (task_flags & WATCHDOG_FLAG) {
             watchdog_task();
             watchdog_core0_heartbeat();
             state->last_watchdog_time = current_time;
         }
         
-        // LED and visual tasks
-        if (time_since_visual >= visual_interval) {
+        if (task_flags & VISUAL_FLAG) {
             led_blinking_task();
             neopixel_status_task();
             state->last_visual_time = current_time;
         }
         
-        // Error check (simplified - no actual task)
-        if (current_time - state->last_error_check_time >= error_interval) {
-            state->last_error_check_time = current_time;
-        }
-        
-        // Button input processing
-        if (time_since_button >= button_interval) {
+        if (task_flags & BUTTON_FLAG) {
             process_button_input(state, current_time);
             state->last_button_time = current_time;
         }
         
-        // Periodic reporting - watchdog status only
-        if ((current_time - state->watchdog_status_timer) >= WATCHDOG_STATUS_REPORT_INTERVAL_MS) {
+        if (task_flags & STATUS_FLAG) {
             report_watchdog_status(current_time, &state->watchdog_status_timer);
         }
     }
@@ -371,16 +373,18 @@ static void main_application_loop(void) {
 
 int main(void) {
     
-    // Set system clock to 120MHz (required for PIO USB)
+    // Set system clock to 120MHz or 240MHz (required for PIO USB, speed depends on device type)
     set_sys_clock_khz(CPU_FREQ, true);
     
     // Small delay for clock stabilization
     sleep_ms(10);
     
     // Initialize basic GPIO
+    #ifdef PIN_USB_5V
     gpio_init(PIN_USB_5V);
     gpio_set_dir(PIN_USB_5V, GPIO_OUT);
     gpio_put(PIN_USB_5V, 0);  // Keep USB power OFF initially
+    #endif
     
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
@@ -389,49 +393,31 @@ int main(void) {
     printf("=== PIOKMBox Starting ===\n");
     
     // Initialize system components
-    printf("BOOTTRACE: calling initialize_system()\n");
     if (!initialize_system()) {
         printf("CRITICAL: System initialization failed\n");
         return -1;
     }
-    printf("BOOTTRACE: initialize_system() returned\n");
     
     // Enable USB host power
-    printf("BOOTTRACE: enabling USB host power\n");
     usb_host_enable_power();
     sleep_ms(100);  // Brief power stabilization
-    printf("BOOTTRACE: USB host power enabled\n");
     
-    // Launch core1 first (like the working example)
-    printf("BOOTTRACE: launching core1 for USB host...\n");
     multicore_reset_core1();
     multicore_launch_core1(core1_main);
-    printf("BOOTTRACE: core1 launched\n");
     
-    // Initialize device stack on core0 (like the working example)
-    printf("BOOTTRACE: initializing USB device stack on core0...\n");
     if (!initialize_usb_device()) {
         printf("CRITICAL: USB Device initialization failed\n");
         return -1;
     }
-    printf("BOOTTRACE: USB device initialized\n");
     
-    // Initialize remaining systems
-    printf("BOOTTRACE: initializing watchdog...\n");
     watchdog_init();
-    printf("BOOTTRACE: watchdog_init() returned\n");
     // NOTE: For debugging startup hangs we skip the extended, blocking
     // watchdog_start() sequence which performs long sleeps/prints and
     // enables the hardware watchdog. If you need the full watchdog
     // behavior re-enable the call below.
     // watchdog_start();
-    printf("BOOTTRACE: watchdog_start() skipped (debug)\n");
-    printf("BOOTTRACE: enabling neopixel power\n");
-    neopixel_enable_power();
-    printf("BOOTTRACE: neopixel power enabled\n");
-    
+    neopixel_enable_power();    
     printf("=== PIOKMBox Ready ===\n");
-    printf("BOOTTRACE: about to enter main_application_loop()\n");
     
     // Enter main application loop
     main_application_loop();

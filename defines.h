@@ -85,6 +85,10 @@
 #define ERROR_CHECK_INTERVAL_MS         1000    // USB error check frequency
 #define CORE1_HEARTBEAT_CHECK_LOOPS     10000   // Core1 heartbeat check frequency
 
+// Performance tuning constants
+#define MAIN_LOOP_TIME_SAMPLE_INTERVAL  32      // Sample time every N loops for performance
+#define CORE1_HEARTBEAT_MULTIPLIER      4       // Reduce Core1 heartbeat frequency by this factor
+
 // LED timing
 #define LED_BLINK_MOUNTED_MS            250     // Fast blink when USB device mounted
 #define LED_BLINK_UNMOUNTED_MS          1000    // Medium blink when USB device unmounted

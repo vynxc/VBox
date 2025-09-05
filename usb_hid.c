@@ -25,22 +25,54 @@ static bool string_descriptors_fetched = false;
 
 #define LANGUAGE_ID 0x0409  // English (US)
 
-// UTF-16 to UTF-8 conversion helper for string descriptors
-static void utf16_to_utf8(uint16_t *utf16_buf, size_t utf16_len, char *utf8_buf, size_t utf8_len) {
-    if (!utf16_buf || !utf8_buf || utf8_len == 0) return;
-    
+// UTF-16LE string descriptor -> UTF-8 (ASCII-only) conversion.
+// Uses the descriptor's bLength to avoid reading past valid data.
+static void utf16_to_utf8(uint16_t *utf16_buf, size_t utf16_buf_bytes, char *utf8_buf, size_t utf8_len)
+{
+    if (!utf16_buf || !utf8_buf || utf8_len == 0)
+        return;
+
+    // String descriptor format: [bLength (1B)][bDescriptorType (1B)][UTF-16LE code units...]
+    // Determine actual descriptor length from first byte
+    const uint8_t *raw = (const uint8_t *)utf16_buf;
+    if (!raw)
+        return;
+
+    // Cap length by provided buffer size to be safe
+    uint8_t bLength = raw[0];
+    if (bLength > utf16_buf_bytes)
+    {
+        bLength = (uint8_t)utf16_buf_bytes;
+    }
+
+    // Compute number of 16-bit code units
+    size_t code_units = 0;
+    if (bLength >= 2)
+    {
+        code_units = (size_t)(bLength - 2) / 2;
+    }
+
     size_t utf8_pos = 0;
-    // Skip the descriptor header (first 2 bytes)
-    for (size_t i = 1; i < utf16_len / 2 && utf8_pos < utf8_len - 1; i++) {
-        uint16_t utf16_char = utf16_buf[i];
-        // Simple ASCII conversion (most device strings are ASCII)
-        if (utf16_char <= 0x7F) {
-            utf8_buf[utf8_pos++] = (char)utf16_char;
-        } else {
-            // For non-ASCII, use '?' as placeholder
+    for (size_t i = 0; i < code_units && utf8_pos < utf8_len - 1; i++)
+    {
+        // Code units start after the 2-byte header; our buffer is uint16_t*, so index offset is +1
+        uint16_t u = utf16_buf[1 + i];
+
+        // Stop early if we hit a NUL code unit (some devices include it)
+        if (u == 0)
+            break;
+
+        if (u <= 0x7F)
+        {
+            utf8_buf[utf8_pos++] = (char)u;
+        }
+        else
+        {
+            // Non-ASCII: replace with '?'
             utf8_buf[utf8_pos++] = '?';
         }
     }
+
     utf8_buf[utf8_pos] = '\0';
 }
 
@@ -90,6 +122,11 @@ static void fetch_device_string_descriptors(uint8_t dev_addr) {
     uint16_t temp_manufacturer[32];
     uint16_t temp_product[48];
     uint16_t temp_serial[16];
+
+    // Ensure buffers are zeroed to avoid stray data being interpreted
+    memset(temp_manufacturer, 0, sizeof(temp_manufacturer));
+    memset(temp_product, 0, sizeof(temp_product));
+    memset(temp_serial, 0, sizeof(temp_serial));
     
     // Get manufacturer string
     if (tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, temp_manufacturer, sizeof(temp_manufacturer)) == XFER_RESULT_SUCCESS) {
@@ -190,7 +227,6 @@ static bool usb_host_initialized = false;
 
 // Initialization helpers
 static bool generate_serial_string(void);
-static bool init_gpio_pins(void);
 
 // Device management helpers
 static void handle_device_disconnection(uint8_t dev_addr);
@@ -284,11 +320,10 @@ bool usb_hid_init(void)
         return false;
     }
 
-    // Initialize GPIO pins
-    if (!init_gpio_pins())
-    {
-        return false;
-    }
+    gpio_init(PIN_BUTTON);
+
+    gpio_set_dir(PIN_BUTTON, GPIO_IN);
+    gpio_pull_up(PIN_BUTTON);
 
     // Initialize connection state
     memset(&connection_state, 0, sizeof(connection_state));
@@ -325,25 +360,11 @@ static bool generate_serial_string(void)
     return true;
 }
 
-static bool init_gpio_pins(void)
-{
-    // Initialize button pin
-    gpio_init(PIN_BUTTON);
-
-    gpio_set_dir(PIN_BUTTON, GPIO_IN);
-    gpio_pull_up(PIN_BUTTON);
-
-    // USB 5V power pin initialization but keep it OFF during early boot
-    gpio_init(PIN_USB_5V);
-    gpio_set_dir(PIN_USB_5V, GPIO_OUT);
-    gpio_put(PIN_USB_5V, 0); // Keep USB power OFF initially for cold boot stability
-
-    return true;
-}
-
 bool usb_host_enable_power(void)
 {
+    #ifdef PIN_USB_5V
     gpio_put(PIN_USB_5V, 1); // Enable USB power
+    #endif
     sleep_ms(100);           // Allow power to stabilize
     return true;
 }
