@@ -163,8 +163,6 @@ void kmbox_serial_init(void)
     uint32_t init_time_ms = to_ms_since_boot(get_absolute_time());
     kmbox_update_states(init_time_ms);
     
-    printf("KMBox serial handler initialized on UART1 (TX: GPIO%d, RX: GPIO%d) @ %d baud\n",
-           KMBOX_UART_TX_PIN, KMBOX_UART_RX_PIN, KMBOX_UART_BAUDRATE);
 }
 
 // Process any available serial input

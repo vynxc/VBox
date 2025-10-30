@@ -85,20 +85,17 @@ void set_attached_device_vid_pid(uint16_t vid, uint16_t pid)
         attached_vid = vid;
         attached_pid = pid;
         attached_has_serial = false; // Default to no serial number unless device has one
-        printf("Updated attached device VID:PID to %04x:%04x\\n", vid, pid);
 
         // Force USB re-enumeration to update descriptor
         force_usb_reenumeration();
     }
     else
     {
-        printf("VID:PID unchanged (%04x:%04x), skipping re-enumeration\\n", vid, pid);
     }
 }
 
 void force_usb_reenumeration()
 {
-    printf("Forcing USB re-enumeration with new descriptor...\\n");
 
     // Disconnect from USB host
     tud_disconnect();
@@ -112,7 +109,6 @@ void force_usb_reenumeration()
     // Wait for reconnection
     sleep_ms(250);
 
-    printf("USB re-enumeration complete\\n");
 }
 
 // Function to fetch string descriptors from attached device
@@ -138,37 +134,31 @@ static void fetch_device_string_descriptors(uint8_t dev_addr)
     if (tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, temp_manufacturer, sizeof(temp_manufacturer)) == XFER_RESULT_SUCCESS)
     {
         utf16_to_utf8(temp_manufacturer, sizeof(temp_manufacturer), attached_manufacturer, sizeof(attached_manufacturer));
-        printf("Fetched manufacturer: %s\\n", attached_manufacturer);
     }
     else
     {
         strcpy(attached_manufacturer, MANUFACTURER_STRING); // Fallback
-        printf("Failed to fetch manufacturer, using fallback: %s\\n", attached_manufacturer);
     }
 
     // Get product string
     if (tuh_descriptor_get_product_string_sync(dev_addr, LANGUAGE_ID, temp_product, sizeof(temp_product)) == XFER_RESULT_SUCCESS)
     {
         utf16_to_utf8(temp_product, sizeof(temp_product), attached_product, sizeof(attached_product));
-        printf("Fetched product: %s\\n", attached_product);
     }
     else
     {
         strcpy(attached_product, PRODUCT_STRING); // Fallback
-        printf("Failed to fetch product, using fallback: %s\\n", attached_product);
     }
 
     // Get serial string (optional)
     if (tuh_descriptor_get_serial_string_sync(dev_addr, LANGUAGE_ID, temp_serial, sizeof(temp_serial)) == XFER_RESULT_SUCCESS)
     {
         utf16_to_utf8(temp_serial, sizeof(temp_serial), attached_serial, sizeof(attached_serial));
-        printf("Fetched serial: %s\\n", attached_serial);
         attached_has_serial = (strlen(attached_serial) > 0);
     }
     else
     {
         attached_has_serial = false;
-        printf("No serial number available\\n");
     }
 
     string_descriptors_fetched = true;
@@ -182,7 +172,6 @@ static void reset_device_string_descriptors(void)
     memset(attached_serial, 0, sizeof(attached_serial));
     string_descriptors_fetched = false;
     attached_has_serial = false;
-    printf("String descriptors reset\\n");
 }
 
 // Function to get the VID of the attached device
@@ -441,7 +430,7 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
 {
     if (!report || !tud_mounted() || !tud_ready() || !tud_hid_ready())
         return false;
-        
+
     // Keep first 5 bits (L/R/M/S1/S2 buttons)
     uint8_t valid_buttons = report->buttons & 0x1F; 
 
@@ -688,7 +677,6 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
 {
     uint16_t vid, pid;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
-    printf("HID device mounted, VID: %04x, PID: %04x\n", vid, pid);
 
     // Fetch string descriptors from the attached device
     fetch_device_string_descriptors(dev_addr);

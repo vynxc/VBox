@@ -29,9 +29,9 @@
 #define PIN_USB_HOST_DM         (17u)   // PIO USB Host D- pin
 #endif
 #define PIN_BUTTON              (7u)    // Reset button pin
-#define PIN_USB_5V              (18u)   // Power pin for USB host
-#define PIN_LED                 (13u)   // Status LED pin
-#define PIN_NEOPIXEL            (21u)   // Neopixel data pin
+// #define PIN_USB_5V              (18u)   // Power pin for USB host
+#define PIN_LED                 (16u)   // Status LED pin
+#define PIN_NEOPIXEL            (16u)   // Neopixel data pin
 #define NEOPIXEL_POWER          (20u)   // Neopixel power pin
 
 // UART configuration for KMBox serial input
@@ -366,12 +366,6 @@
 //--------------------------------------------------------------------+
 // CONDITIONAL COMPILATION MACROS
 //--------------------------------------------------------------------+
-
-#if ENABLE_VERBOSE_LOGGING
-    #define LOG_VERBOSE(fmt, ...) printf("[VERBOSE] " fmt "\n", ##__VA_ARGS__)
-#else
-    #define LOG_VERBOSE(fmt, ...) ((void)0)
-#endif
 
 #if ENABLE_INIT_LOGGING
     #define LOG_INIT(fmt, ...) printf("[INIT] " fmt "\n", ##__VA_ARGS__)
