@@ -16,14 +16,14 @@ else()
     set(USERHOME $ENV{HOME})
 endif()
 set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
+set(toolchainVersion RISCV_ZCB_RPI_2_2_0_3)
 set(picotoolVersion 2.2.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD adafruit_feather_rp2040_usb_host CACHE STRING "Board type")
+set(PICO_BOARD waveshare_rp2350_usb_a CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
@@ -70,8 +70,14 @@ target_link_libraries(PIOKMbox
         pico_multicore
         m)
 
-# Add PIO USB library
-add_subdirectory(lib/Pico-PIO-USB)
+# Add PIO USB library via FetchContent (GitHub)
+include(FetchContent)
+FetchContent_Declare(
+        PicoPIOUSB
+        GIT_REPOSITORY https://github.com/sekigon-gonnoc/Pico-PIO-USB.git
+        GIT_TAG 0.7.2
+)
+FetchContent_MakeAvailable(PicoPIOUSB)
 
 # Add KMBox Commands library
 add_subdirectory(lib/kmbox-commands)
@@ -88,8 +94,8 @@ target_compile_definitions(PIOKMbox PRIVATE
         PIO_USB_AVAILABLE=1
         CFG_TUH_RPI_PIO_USB=1
         CPU_FREQ=240000
-        PIN_USB_HOST_DP=16
-        PIN_USB_HOST_DM=17
+        PIN_USB_HOST_DP=12
+        PIN_USB_HOST_DM=13
 )
 
 # Link PIO USB library

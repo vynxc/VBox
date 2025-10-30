@@ -9,9 +9,9 @@
 #include "pico/stdlib.h"
 #include "pico/unique_id.h"
 #include "kmbox_serial_handler.h" // Include the header for serial handling
-#include "state_management.h"   // Include the header for state management
-#include "watchdog.h"           // Include the header for watchdog management
-#include <string.h>             // For strcpy, strlen, memset
+#include "state_management.h"     // Include the header for state management
+#include "watchdog.h"             // Include the header for watchdog management
+#include <string.h>               // For strcpy, strlen, memset
 
 uint16_t attached_vid = 0;
 uint16_t attached_pid = 0;
@@ -23,7 +23,7 @@ static char attached_product[64] = "";
 static char attached_serial[32] = "";
 static bool string_descriptors_fetched = false;
 
-#define LANGUAGE_ID 0x0409  // English (US)
+#define LANGUAGE_ID 0x0409 // English (US)
 
 // UTF-16LE string descriptor -> UTF-8 (ASCII-only) conversion.
 // Uses the descriptor's bLength to avoid reading past valid data.
@@ -77,47 +77,53 @@ static void utf16_to_utf8(uint16_t *utf16_buf, size_t utf16_buf_bytes, char *utf
 }
 
 // Function to set the VID and PID of the attached device
-void set_attached_device_vid_pid(uint16_t vid, uint16_t pid) {
+void set_attached_device_vid_pid(uint16_t vid, uint16_t pid)
+{
     // Only update and re-enumerate if VID/PID has actually changed
-    if (attached_vid != vid || attached_pid != pid) {
+    if (attached_vid != vid || attached_pid != pid)
+    {
         attached_vid = vid;
         attached_pid = pid;
         attached_has_serial = false; // Default to no serial number unless device has one
         printf("Updated attached device VID:PID to %04x:%04x\\n", vid, pid);
-        
+
         // Force USB re-enumeration to update descriptor
         force_usb_reenumeration();
-    } else {
+    }
+    else
+    {
         printf("VID:PID unchanged (%04x:%04x), skipping re-enumeration\\n", vid, pid);
     }
 }
 
-void force_usb_reenumeration() {
+void force_usb_reenumeration()
+{
     printf("Forcing USB re-enumeration with new descriptor...\\n");
-    
+
     // Disconnect from USB host
     tud_disconnect();
-    
+
     // Wait for host to recognize disconnection (250ms minimum for Windows/macOS)
     sleep_ms(500);
-    
+
     // Reconnect with new descriptor
     tud_connect();
-    
+
     // Wait for reconnection
     sleep_ms(250);
-    
+
     printf("USB re-enumeration complete\\n");
 }
 
 // Function to fetch string descriptors from attached device
-static void fetch_device_string_descriptors(uint8_t dev_addr) {
+static void fetch_device_string_descriptors(uint8_t dev_addr)
+{
     // Reset string descriptors
     memset(attached_manufacturer, 0, sizeof(attached_manufacturer));
     memset(attached_product, 0, sizeof(attached_product));
     memset(attached_serial, 0, sizeof(attached_serial));
     string_descriptors_fetched = false;
-    
+
     // Temporary buffers for UTF-16 strings
     uint16_t temp_manufacturer[32];
     uint16_t temp_product[48];
@@ -127,40 +133,50 @@ static void fetch_device_string_descriptors(uint8_t dev_addr) {
     memset(temp_manufacturer, 0, sizeof(temp_manufacturer));
     memset(temp_product, 0, sizeof(temp_product));
     memset(temp_serial, 0, sizeof(temp_serial));
-    
+
     // Get manufacturer string
-    if (tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, temp_manufacturer, sizeof(temp_manufacturer)) == XFER_RESULT_SUCCESS) {
+    if (tuh_descriptor_get_manufacturer_string_sync(dev_addr, LANGUAGE_ID, temp_manufacturer, sizeof(temp_manufacturer)) == XFER_RESULT_SUCCESS)
+    {
         utf16_to_utf8(temp_manufacturer, sizeof(temp_manufacturer), attached_manufacturer, sizeof(attached_manufacturer));
         printf("Fetched manufacturer: %s\\n", attached_manufacturer);
-    } else {
-        strcpy(attached_manufacturer, MANUFACTURER_STRING);  // Fallback
+    }
+    else
+    {
+        strcpy(attached_manufacturer, MANUFACTURER_STRING); // Fallback
         printf("Failed to fetch manufacturer, using fallback: %s\\n", attached_manufacturer);
     }
-    
+
     // Get product string
-    if (tuh_descriptor_get_product_string_sync(dev_addr, LANGUAGE_ID, temp_product, sizeof(temp_product)) == XFER_RESULT_SUCCESS) {
+    if (tuh_descriptor_get_product_string_sync(dev_addr, LANGUAGE_ID, temp_product, sizeof(temp_product)) == XFER_RESULT_SUCCESS)
+    {
         utf16_to_utf8(temp_product, sizeof(temp_product), attached_product, sizeof(attached_product));
         printf("Fetched product: %s\\n", attached_product);
-    } else {
-        strcpy(attached_product, PRODUCT_STRING);  // Fallback
+    }
+    else
+    {
+        strcpy(attached_product, PRODUCT_STRING); // Fallback
         printf("Failed to fetch product, using fallback: %s\\n", attached_product);
     }
-    
+
     // Get serial string (optional)
-    if (tuh_descriptor_get_serial_string_sync(dev_addr, LANGUAGE_ID, temp_serial, sizeof(temp_serial)) == XFER_RESULT_SUCCESS) {
+    if (tuh_descriptor_get_serial_string_sync(dev_addr, LANGUAGE_ID, temp_serial, sizeof(temp_serial)) == XFER_RESULT_SUCCESS)
+    {
         utf16_to_utf8(temp_serial, sizeof(temp_serial), attached_serial, sizeof(attached_serial));
         printf("Fetched serial: %s\\n", attached_serial);
         attached_has_serial = (strlen(attached_serial) > 0);
-    } else {
+    }
+    else
+    {
         attached_has_serial = false;
         printf("No serial number available\\n");
     }
-    
+
     string_descriptors_fetched = true;
 }
 
 // Function to reset string descriptors when device is disconnected
-static void reset_device_string_descriptors(void) {
+static void reset_device_string_descriptors(void)
+{
     memset(attached_manufacturer, 0, sizeof(attached_manufacturer));
     memset(attached_product, 0, sizeof(attached_product));
     memset(attached_serial, 0, sizeof(attached_serial));
@@ -170,19 +186,23 @@ static void reset_device_string_descriptors(void) {
 }
 
 // Function to get the VID of the attached device
-uint16_t get_attached_vid(void) {
+uint16_t get_attached_vid(void)
+{
     return attached_vid;
 }
 
 // Function to get the PID of the attached device
-uint16_t get_attached_pid(void) {
+uint16_t get_attached_pid(void)
+{
     return attached_pid;
 }
 
 // Function to get dynamic serial string
-const char* get_dynamic_serial_string() {
+const char *get_dynamic_serial_string()
+{
     static char dynamic_serial[64];
-    if (attached_vid && attached_pid) {
+    if (attached_vid && attached_pid)
+    {
         snprintf(dynamic_serial, sizeof(dynamic_serial), "PIOKMbox_%04X_%04X", attached_vid, attached_pid);
         return dynamic_serial;
     }
@@ -205,9 +225,7 @@ typedef struct
 typedef struct
 {
     bool mouse_connected;
-    bool keyboard_connected;
     uint8_t mouse_dev_addr;
-    uint8_t keyboard_dev_addr;
 } device_connection_state_t;
 
 // Device mode state
@@ -233,7 +251,6 @@ static void handle_device_disconnection(uint8_t dev_addr);
 static void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol);
 
 // Report processing helpers
-static bool process_keyboard_report_internal(const hid_keyboard_report_t *report);
 static bool process_mouse_report_internal(const hid_mouse_report_t *report);
 
 // Debug and logging helpers
@@ -241,9 +258,6 @@ static void print_device_info(uint8_t dev_addr, const tusb_desc_device_t *desc);
 
 // --- Runtime HID descriptor mirroring storage & helpers ---
 #define HID_DESC_BUF_SIZE 256
-
-static const uint8_t desc_hid_keyboard[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD))};
 
 static const uint8_t desc_hid_mouse_default[] = {
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(REPORT_ID_MOUSE))};
@@ -253,7 +267,6 @@ static const uint8_t desc_hid_consumer[] = {
 
 // Static fallback concatenated descriptor (used by config descriptor sizeof)
 const uint8_t desc_hid_report[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(REPORT_ID_MOUSE)),
     TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(REPORT_ID_CONSUMER_CONTROL))};
 
@@ -270,13 +283,6 @@ static void build_runtime_hid_report_with_mouse(const uint8_t *mouse_desc, size_
 {
     // Concatenate keyboard + mouse_desc (or default) + consumer into runtime buffer
     size_t pos = 0;
-
-    // Copy keyboard
-    size_t klen = sizeof(desc_hid_keyboard);
-    if (pos + klen >= HID_DESC_BUF_SIZE)
-        return;
-    memcpy(&desc_hid_report_runtime[pos], desc_hid_keyboard, klen);
-    pos += klen;
 
     // Copy mouse (provided) or default
     if (mouse_desc != NULL && mouse_len > 0)
@@ -362,10 +368,10 @@ static bool generate_serial_string(void)
 
 bool usb_host_enable_power(void)
 {
-    #ifdef PIN_USB_5V
+#ifdef PIN_USB_5V
     gpio_put(PIN_USB_5V, 1); // Enable USB power
-    #endif
-    sleep_ms(100);           // Allow power to stabilize
+#endif
+    sleep_ms(100); // Allow power to stabilize
     return true;
 }
 
@@ -393,11 +399,6 @@ bool is_mouse_connected(void)
     return connection_state.mouse_connected;
 }
 
-bool is_keyboard_connected(void)
-{
-    return connection_state.keyboard_connected;
-}
-
 static void handle_device_disconnection(uint8_t dev_addr)
 {
     // Only reset connection flags for the specific device that was disconnected
@@ -405,12 +406,6 @@ static void handle_device_disconnection(uint8_t dev_addr)
     {
         connection_state.mouse_connected = false;
         connection_state.mouse_dev_addr = 0;
-    }
-
-    if (dev_addr == connection_state.keyboard_dev_addr)
-    {
-        connection_state.keyboard_connected = false;
-        connection_state.keyboard_dev_addr = 0;
     }
 }
 
@@ -433,12 +428,6 @@ static void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol)
         neopixel_trigger_mouse_activity(); // Flash magenta for mouse connection
         break;
 
-    case HID_ITF_PROTOCOL_KEYBOARD:
-        connection_state.keyboard_connected = true;
-        connection_state.keyboard_dev_addr = dev_addr;
-        neopixel_trigger_keyboard_activity(); // Flash yellow for keyboard connection
-        break;
-
     default:
         // Unknown HID protocol: silently ignore logging in the hot path
         break;
@@ -446,27 +435,6 @@ static void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol)
 
     // Update LED status instead of verbose console output
     neopixel_update_status();
-}
-
-static bool process_keyboard_report_internal(const hid_keyboard_report_t *report)
-{
-    if (report == NULL)
-    {
-        return false;
-    }
-
-    // Fast path: skip ready check for maximum performance
-    // TinyUSB will handle the queuing internally
-    bool success = tud_hid_report(REPORT_ID_KEYBOARD, report, sizeof(hid_keyboard_report_t));
-    if (success)
-    {
-        // Skip error counter reset for performance
-        return true;
-    }
-    else
-    {
-        return false;
-    }
 }
 
 static bool process_mouse_report_internal(const hid_mouse_report_t *report)
@@ -479,7 +447,7 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     // Check if USB device is ready to send reports
     if (!tud_mounted() || !tud_ready())
     {
-        printf("Mouse report dropped: USB device not ready (mounted=%d, ready=%d)\\n", 
+        printf("Mouse report dropped: USB device not ready (mounted=%d, ready=%d)\\n",
                tud_mounted(), tud_ready());
         return false;
     }
@@ -525,7 +493,7 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
     if (success)
     {
-        printf("Mouse report sent: buttons=0x%02x, x=%d, y=%d, wheel=%d\\n", 
+        printf("Mouse report sent: buttons=0x%02x, x=%d, y=%d, wheel=%d\\n",
                buttons_to_send, final_x, final_y, final_wheel);
         return true;
     }
@@ -548,26 +516,6 @@ static void print_device_info(uint8_t dev_addr, const tusb_desc_device_t *desc)
     (void)desc; // suppressed detailed device info logging
 }
 
-void process_kbd_report(const hid_keyboard_report_t *report)
-{
-    if (report == NULL)
-    {
-        return; // Fast fail without printf for performance
-    }
-
-    static uint32_t activity_counter = 0;
-    if (++activity_counter % KEYBOARD_ACTIVITY_THROTTLE == 0)
-    {
-        neopixel_trigger_keyboard_activity();
-    }
-
-    // Fast forward the report
-    if (process_keyboard_report_internal(report))
-    {
-        // Report processed successfully
-    }
-}
-
 void process_mouse_report(const hid_mouse_report_t *report)
 {
     if (report == NULL)
@@ -584,7 +532,7 @@ void process_mouse_report(const hid_mouse_report_t *report)
     // Fast forward the report
     if (process_mouse_report_internal(report))
     {
-        // Report processed successfully  
+        // Report processed successfully
     }
 
     // If the report contains movement, advance the rainbow hue based on movement
@@ -592,24 +540,6 @@ void process_mouse_report(const hid_mouse_report_t *report)
     {
         neopixel_rainbow_on_movement(report->x, report->y);
     }
-}
-
-bool find_key_in_report(const hid_keyboard_report_t *report, uint8_t keycode)
-{
-    if (report == NULL)
-    {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < HID_KEYBOARD_KEYCODE_COUNT; i++)
-    {
-        if (report->keycode[i] == keycode)
-        {
-            return true;
-        }
-    }
-
-    return false;
 }
 
 void hid_device_task(void)
@@ -639,7 +569,7 @@ void hid_device_task(void)
     }
 
     // Only send reports when devices are not connected (avoid conflicts)
-    if (!connection_state.mouse_connected && !connection_state.keyboard_connected)
+    if (!connection_state.mouse_connected)
     {
         send_hid_report(REPORT_ID_MOUSE);
     }
@@ -672,18 +602,6 @@ void send_hid_report(uint8_t report_id)
 
     switch (report_id)
     {
-    case REPORT_ID_KEYBOARD:
-        if (!connection_state.keyboard_connected)
-        {
-            // CRITICAL: Check device readiness before each report
-            if (tud_hid_ready())
-            {
-                // Use static array to avoid stack allocation overhead
-                static const uint8_t empty_keycode[HID_KEYBOARD_KEYCODE_COUNT] = {0};
-                tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, empty_keycode);
-            }
-        }
-        break;
 
     case REPORT_ID_MOUSE:
         // Only send button-based mouse movement if no mouse is connected
@@ -808,10 +726,10 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
     uint16_t vid, pid;
     tuh_vid_pid_get(dev_addr, &vid, &pid);
     printf("HID device mounted, VID: %04x, PID: %04x\n", vid, pid);
-    
+
     // Fetch string descriptors from the attached device
     fetch_device_string_descriptors(dev_addr);
-    
+
     set_attached_device_vid_pid(vid, pid);
 
     // Capture host report descriptor for later mirroring
@@ -836,8 +754,8 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
             }
         }
 
-    // Rebuild runtime HID report descriptor referencing the host mouse descriptor
-    build_runtime_hid_report_with_mouse(host_mouse_desc, host_mouse_desc_len);
+        // Rebuild runtime HID report descriptor referencing the host mouse descriptor
+        build_runtime_hid_report_with_mouse(host_mouse_desc, host_mouse_desc_len);
     }
     else
     {
@@ -854,13 +772,13 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, const uint8_t *desc_re
     // Start receiving reports
     if (!tuh_hid_receive_report(dev_addr, instance))
     {
-    // Receiving reports failed - indicate via LED error flash
-    neopixel_trigger_usb_disconnection_flash();
+        // Receiving reports failed - indicate via LED error flash
+        neopixel_trigger_usb_disconnection_flash();
     }
     else
     {
-    // Successfully started receiving reports; update status LED
-    neopixel_update_status();
+        // Successfully started receiving reports; update status LED
+        neopixel_update_status();
     }
     neopixel_update_status();
 }
@@ -894,17 +812,6 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
     // Direct processing without extra copying for better performance
     switch (itf_protocol)
     {
-    case HID_ITF_PROTOCOL_KEYBOARD:
-        // Ensure we have a full keyboard report before processing. Copy to a
-        // local structure to avoid alignment and aliasing issues coming from
-        // the USB buffer.
-        if (len >= (int)sizeof(hid_keyboard_report_t))
-        {
-            hid_keyboard_report_t kbd_report;
-            memcpy(&kbd_report, report, sizeof(kbd_report));
-            process_kbd_report(&kbd_report);
-        }
-        break;
 
     case HID_ITF_PROTOCOL_MOUSE:
         // Process mouse reports through kmbox system instead of raw forwarding
@@ -912,45 +819,45 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
         {
             // Handle different mouse report formats
             hid_mouse_report_t mouse_report_local = {0};
-            
-            if (len == 8) {
+
+            if (len == 8)
+            {
                 // This is a 16-bit coordinate mouse (8-byte report)
                 // Format: [buttons] [pad] [pad] [pad] [x_low] [x_high] [y_low] [y_high]
                 mouse_report_local.buttons = report[0];
-                
+
                 // Extract 16-bit X and Y coordinates and convert to 8-bit with scaling
                 int16_t x16 = (int16_t)(report[4] | (report[5] << 8));
                 int16_t y16 = (int16_t)(report[6] | (report[7] << 8));
-                
+
                 // Scale down the 16-bit coordinates for smoother movement
                 // Right shift by 2 bits (divide by 4) to reduce sensitivity and prevent overflow
+                // BUG: causes moving right and down feel weird and slow! Removing fixes it!
+                // BUG: Moving mouse too fast will cause it not to move at all. im not sure where that bug is from
                 x16 >>= 2;
                 y16 >>= 2;
-                
-                // Clamp to 8-bit range 
-                if (x16 > 127) mouse_report_local.x = 127;
-                else if (x16 < -128) mouse_report_local.x = -128;
-                else mouse_report_local.x = (int8_t)x16;
-                
-                if (y16 > 127) mouse_report_local.y = 127;
-                else if (y16 < -128) mouse_report_local.y = -128;
-                else mouse_report_local.y = (int8_t)y16;
-                
+
+                // Clamp to 8-bit range
+                mouse_report_local.x = (x16 > 127) ? 127 : ((x16 < -128) ? -128 : (int8_t)x16);
+                mouse_report_local.y = (y16 > 127) ? 127 : ((y16 < -128) ? -128 : (int8_t)y16);
+
                 // Try different positions for scroll wheel - check all possible bytes
                 // Most likely candidates are bytes 1, 2, or 3 (after buttons)
-                int8_t wheel_candidate = 0;
-                if (report[1] != 0) wheel_candidate = (int8_t)report[1];
-                else if (report[2] != 0) wheel_candidate = (int8_t)report[2];
-                else if (report[3] != 0) wheel_candidate = (int8_t)report[3];
-                
-                mouse_report_local.wheel = wheel_candidate;
+                int8_t wheel = 0;
+                if (report[1] != 0)
+                    wheel = (int8_t)report[1];
+                else if (report[2] != 0)
+                    wheel = (int8_t)report[2];
+                else if (report[3] != 0)
+                    wheel = (int8_t)report[3];
+
+                mouse_report_local.wheel = wheel;
                 mouse_report_local.pan = 0;
-                
-            } else {
+            }
+            else
+            {
                 // Standard 5-byte mouse report format
-                size_t copy_sz = len;
-                if (copy_sz > sizeof(mouse_report_local))
-                    copy_sz = sizeof(mouse_report_local);
+                size_t copy_sz = (len < sizeof(mouse_report_local)) ? len : sizeof(mouse_report_local);
                 memcpy(&mouse_report_local, report, copy_sz);
             }
 
@@ -983,25 +890,6 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, const uint8_t *buffer, uint16_t bufsize)
 {
     (void)instance;
-
-    if (report_type == HID_REPORT_TYPE_OUTPUT && report_id == REPORT_ID_KEYBOARD)
-    {
-        // Validate buffer
-        if (buffer == NULL || bufsize < MIN_BUFFER_SIZE)
-        {
-            return;
-        }
-
-        uint8_t const kbd_leds = buffer[0];
-        bool new_caps_state = (kbd_leds & KEYBOARD_LED_CAPSLOCK) != 0;
-
-        if (new_caps_state != caps_lock_state)
-        {
-            caps_lock_state = new_caps_state;
-            // Indicate caps lock change with LED flash instead of console logging
-            neopixel_trigger_caps_lock_flash();
-        }
-    }
 }
 
 void tud_hid_report_complete_cb(uint8_t instance, const uint8_t *report, uint16_t len)
@@ -1148,29 +1036,28 @@ void usb_stack_error_check(void)
 // Device Descriptors
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
-uint8_t const * tud_descriptor_device_cb(void)
+uint8_t const *tud_descriptor_device_cb(void)
 {
     static tusb_desc_device_t desc_device;
 
-    desc_device = (tusb_desc_device_t) {
-        .bLength            = sizeof(tusb_desc_device_t),
-        .bDescriptorType    = TUSB_DESC_DEVICE,
-        .bcdUSB             = 0x0200,
-        .bDeviceClass       = 0x00,
-        .bDeviceSubClass    = 0x00,
-        .bDeviceProtocol    = 0x00,
-        .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    desc_device = (tusb_desc_device_t){
+        .bLength = sizeof(tusb_desc_device_t),
+        .bDescriptorType = TUSB_DESC_DEVICE,
+        .bcdUSB = 0x0200,
+        .bDeviceClass = 0x00,
+        .bDeviceSubClass = 0x00,
+        .bDeviceProtocol = 0x00,
+        .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
 
-        .idVendor           = (get_attached_vid() != 0) ? get_attached_vid() : USB_VENDOR_ID,
-        .idProduct          = (get_attached_pid() != 0) ? get_attached_pid() : USB_PRODUCT_ID,
-        .bcdDevice          = 0x0100,
+        .idVendor = (get_attached_vid() != 0) ? get_attached_vid() : USB_VENDOR_ID,
+        .idProduct = (get_attached_pid() != 0) ? get_attached_pid() : USB_PRODUCT_ID,
+        .bcdDevice = 0x0100,
 
-        .iManufacturer      = 0x01,
-        .iProduct           = 0x02,
-        .iSerialNumber      = attached_has_serial ? 0x03 : 0x00,
+        .iManufacturer = 0x01,
+        .iProduct = 0x02,
+        .iSerialNumber = attached_has_serial ? 0x03 : 0x00,
 
-        .bNumConfigurations = 0x01
-    };
+        .bNumConfigurations = 0x01};
 
     return (uint8_t const *)&desc_device;
 }
@@ -1275,28 +1162,36 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
         }
 
         // Use dynamic string descriptors if available
-        if (string_descriptors_fetched) {
-            switch (index) {
-                case STRING_DESC_MANUFACTURER_IDX:
-                    str = attached_manufacturer;
-                    break;
-                case STRING_DESC_PRODUCT_IDX:
-                    str = attached_product;
-                    break;
-                case STRING_DESC_SERIAL_IDX:
-                    if (attached_has_serial && strlen(attached_serial) > 0) {
-                        str = attached_serial;
-                    } else {
-                        str = get_dynamic_serial_string();
-                    }
-                    break;
-                default:
-                    // Use default for other indices
-                    break;
+        if (string_descriptors_fetched)
+        {
+            switch (index)
+            {
+            case STRING_DESC_MANUFACTURER_IDX:
+                str = attached_manufacturer;
+                break;
+            case STRING_DESC_PRODUCT_IDX:
+                str = attached_product;
+                break;
+            case STRING_DESC_SERIAL_IDX:
+                if (attached_has_serial && strlen(attached_serial) > 0)
+                {
+                    str = attached_serial;
+                }
+                else
+                {
+                    str = get_dynamic_serial_string();
+                }
+                break;
+            default:
+                // Use default for other indices
+                break;
             }
-        } else {
+        }
+        else
+        {
             // Fallback to default strings if not fetched yet
-            if (index == STRING_DESC_SERIAL_IDX) {
+            if (index == STRING_DESC_SERIAL_IDX)
+            {
                 str = get_dynamic_serial_string();
             }
         }

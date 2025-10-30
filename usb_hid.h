@@ -48,7 +48,6 @@ bool usb_hid_init(void);
 bool usb_host_enable_power(void);
 bool get_caps_lock_state(void);
 bool is_mouse_connected(void);
-bool is_keyboard_connected(void);
 
 // USB stack initialization tracking
 void usb_device_mark_initialized(void);
