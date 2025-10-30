@@ -48,9 +48,9 @@
 #define CFG_TUSB_RHPORT1_MODE     OPT_MODE_HOST
 
 
-#define CFG_TUSB_DEBUG_PRINTF     0
-#define CFG_TUD_LOG_LEVEL         0
-#define CFG_TUH_LOG_LEVEL         0
+// #define CFG_TUSB_DEBUG_PRINTF     0
+// #define CFG_TUD_LOG_LEVEL         0
+// #define CFG_TUH_LOG_LEVEL         0
 
 
 #ifndef CFG_TUSB_DEBUG
