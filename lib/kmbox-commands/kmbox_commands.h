@@ -10,6 +10,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 
@@ -113,5 +117,9 @@ const char* kmbox_get_button_name(kmbox_button_t button);
 
 
 void kmbox_update_physical_buttons(uint8_t physical_buttons);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // KMBOX_COMMANDS_H

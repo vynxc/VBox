@@ -19,6 +19,10 @@
 #include <stdbool.h>
 #include "defines.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 
@@ -101,5 +105,9 @@ void watchdog_force_reset(void);
  * Controls whether watchdog debug messages are printed
  */
 void watchdog_set_debug(bool enable);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // WATCHDOG_H

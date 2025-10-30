@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 
@@ -51,5 +55,9 @@ bool system_state_should_run_task(const system_state_t* state, uint32_t current_
 
 void system_state_batch_update_timers(system_state_t* state, uint32_t current_time,
                                      uint8_t update_flags);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // STATE_MANAGEMENT_H

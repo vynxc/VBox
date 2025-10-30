@@ -14,6 +14,10 @@
 #include <stdbool.h>
 #include "defines.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 
@@ -75,5 +79,9 @@ uint32_t neopixel_apply_brightness_u8(uint32_t color, uint8_t brightness);
 void neopixel_breathing_effect(void);
 
 void neopixel_flush_queue(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // LED_CONTROL_H

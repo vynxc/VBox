@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 
 
@@ -57,6 +61,10 @@ bool init_state_machine_process(init_state_machine_t* sm, init_event_t event);
 const char* init_state_to_string(init_state_t state);
 bool init_state_machine_is_complete(const init_state_machine_t* sm);
 bool init_state_machine_has_error(const init_state_machine_t* sm);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // INIT_STATE_MACHINE_H
 

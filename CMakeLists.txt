@@ -36,13 +36,13 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(vbox
-    vbox.c
-    led_control.c
-    usb_hid.c
-    watchdog.c
-    init_state_machine.c
-    state_management.c
-    kmbox_serial_handler.c
+    vbox.cpp
+    led_control.cpp
+    usb_hid.cpp
+    watchdog.cpp
+    init_state_machine.cpp
+    state_management.cpp
+    kmbox_serial_handler.cpp
 )
 
 # generate the header file into the source tree as it is included in the RP2040 datasheet
