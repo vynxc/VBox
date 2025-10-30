@@ -36,17 +36,17 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(vbox
-    vbox.cpp
-    led_control.cpp
-    usb_hid.cpp
-    watchdog.cpp
-    init_state_machine.cpp
-    state_management.cpp
-    kmbox_serial_handler.cpp
+    src/vbox.cpp
+    src/led_control.cpp
+    src/usb_hid.cpp
+    src/watchdog.cpp
+    src/init_state_machine.cpp
+    src/state_management.cpp
+    src/kmbox_serial_handler.cpp
 )
 
 # generate the header file into the source tree as it is included in the RP2040 datasheet
-pico_generate_pio_header(vbox ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR})
+pico_generate_pio_header(vbox ${CMAKE_CURRENT_LIST_DIR}/hardware/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/hardware)
 
 pico_set_program_name(vbox "vbox")
 pico_set_program_version(vbox "0.1")
@@ -86,7 +86,7 @@ add_subdirectory(lib/kmbox-commands)
 message(STATUS "PIO USB library support enabled")
 # Add compile definitions for TinyUSB and pin configurations
 target_compile_definitions(vbox PRIVATE
-        CFG_TUSB_CONFIG_FILE="tusb_config.h"
+        CFG_TUSB_CONFIG_FILE="config/tusb_config.h"
         BOARD_TUH_RHPORT=1
         BOARD_TUD_RHPORT=0
         PIO_USB_USE_TINYUSB
@@ -113,7 +113,9 @@ target_sources(vbox PRIVATE
 # Add the standard include files to the build
 target_include_directories(vbox PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/src
+        ${CMAKE_CURRENT_LIST_DIR}/include
+        ${CMAKE_CURRENT_LIST_DIR}/config
+        ${CMAKE_CURRENT_LIST_DIR}/hardware
 )
 
 pico_add_extra_outputs(vbox)
