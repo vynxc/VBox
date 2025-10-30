@@ -2,7 +2,7 @@
  * Hurricane PIOKMBox Firmware
 */
 
-// init_state_machine.c
+
 
 #include "init_state_machine.h"
 #include "defines.h"
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <stdio.h>
 
-// State transition table
+
 typedef struct {
     init_state_t from_state;
     init_event_t event;
@@ -21,38 +21,38 @@ typedef struct {
 } state_transition_t;
 
 static const state_transition_t transitions[] = {
-    // Power stabilization - use existing magic number
+
     {INIT_STATE_POWER_STABILIZATION, INIT_EVENT_TIMER_EXPIRED, INIT_STATE_SYSTEM_SETUP, COLD_BOOT_STABILIZATION_MS},
     
-    // System setup
+
     {INIT_STATE_SYSTEM_SETUP, INIT_EVENT_SUCCESS, INIT_STATE_USB_DEVICE_INIT, USB_DEVICE_STABILIZATION_MS},
     {INIT_STATE_SYSTEM_SETUP, INIT_EVENT_FAILURE, INIT_STATE_ERROR, 0},
     
-    // USB device initialization - use longer timeout for device ready
+
     {INIT_STATE_USB_DEVICE_INIT, INIT_EVENT_SUCCESS, INIT_STATE_CORE1_STARTUP, USB_STACK_READY_DELAY_MS},
     {INIT_STATE_USB_DEVICE_INIT, INIT_EVENT_FAILURE, INIT_STATE_RETRY, USB_STACK_READY_DELAY_MS},
     
-    // Core1 startup
+
     {INIT_STATE_CORE1_STARTUP, INIT_EVENT_SUCCESS, INIT_STATE_WAITING_CORE1, USB_INIT_PROGRESSIVE_DELAY_MS},
     {INIT_STATE_CORE1_STARTUP, INIT_EVENT_FAILURE, INIT_STATE_RETRY, USB_INIT_PROGRESSIVE_DELAY_MS},
     
-    // Waiting for core1 - use core1 timeout from magic numbers
+
     {INIT_STATE_WAITING_CORE1, INIT_EVENT_CORE1_READY, INIT_STATE_WATCHDOG_START, WATCHDOG_INIT_DELAY_MS},
     {INIT_STATE_WAITING_CORE1, INIT_EVENT_TIMER_EXPIRED, INIT_STATE_RETRY, USB_INIT_PROGRESSIVE_DELAY_MS},
     
-    // Watchdog start - use power stabilization delay
+
     {INIT_STATE_WATCHDOG_START, INIT_EVENT_SUCCESS, INIT_STATE_POWER_ENABLE, FINAL_STABILIZATION_DELAY_MS},
     {INIT_STATE_WATCHDOG_START, INIT_EVENT_FAILURE, INIT_STATE_RETRY, USB_INIT_PROGRESSIVE_DELAY_MS},
     
-    // Power enable - use power enable delay from magic numbers
+
     {INIT_STATE_POWER_ENABLE, INIT_EVENT_SUCCESS, INIT_STATE_FINAL_CHECKS, POWER_ENABLE_DELAY_MS},
     {INIT_STATE_POWER_ENABLE, INIT_EVENT_FAILURE, INIT_STATE_RETRY, USB_INIT_PROGRESSIVE_DELAY_MS},
     
-    // Final checks
+
     {INIT_STATE_FINAL_CHECKS, INIT_EVENT_SUCCESS, INIT_STATE_COMPLETE, 0},
     {INIT_STATE_FINAL_CHECKS, INIT_EVENT_FAILURE, INIT_STATE_RETRY, USB_INIT_PROGRESSIVE_DELAY_MS},
     
-    // Retry logic - back to system setup with retry delay
+
     {INIT_STATE_RETRY, INIT_EVENT_TIMER_EXPIRED, INIT_STATE_SYSTEM_SETUP, 0},
     {INIT_STATE_RETRY, INIT_EVENT_RETRY_LIMIT_REACHED, INIT_STATE_ERROR, 0},
 };
@@ -68,19 +68,19 @@ void init_state_machine_init(init_state_machine_t* sm) {
 bool init_state_machine_process(init_state_machine_t* sm, init_event_t event) {
     const uint32_t current_time = to_ms_since_boot(get_absolute_time());
     
-    // Check for timeout only if we haven't already been given a timer expired event
+
     if (event != INIT_EVENT_TIMER_EXPIRED &&
         sm->state_timeout_ms > 0 &&
         (current_time - sm->state_entry_time) >= sm->state_timeout_ms) {
         event = INIT_EVENT_TIMER_EXPIRED;
     }
     
-    // Find matching transition
+
     for (size_t i = 0; i < sizeof(transitions) / sizeof(transitions[0]); i++) {
         if (transitions[i].from_state == sm->current_state && 
             transitions[i].event == event) {
             
-            // Handle retry counting
+
             if (sm->current_state == INIT_STATE_RETRY) {
                 sm->retry_count++;
                 if (sm->retry_count >= sm->max_retries) {
@@ -89,7 +89,7 @@ bool init_state_machine_process(init_state_machine_t* sm, init_event_t event) {
                 }
             }
             
-            // State transition
+
             sm->previous_state = sm->current_state;
             sm->current_state = transitions[i].to_state;
             sm->state_entry_time = current_time;
@@ -104,7 +104,7 @@ bool init_state_machine_process(init_state_machine_t* sm, init_event_t event) {
         }
     }
     
-    // No valid transition found
+
     LOG_ERROR("Invalid transition from state %s with event %d", 
              init_state_to_string(sm->current_state), event);
     return false;

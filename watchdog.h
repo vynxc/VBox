@@ -19,9 +19,9 @@
 #include <stdbool.h>
 #include "defines.h"
 
-//--------------------------------------------------------------------+
-// WATCHDOG STATUS STRUCTURE
-//--------------------------------------------------------------------+
+
+
+
 
 typedef struct {
     uint32_t core0_heartbeat_count;     // Core 0 heartbeat counter
@@ -35,9 +35,9 @@ typedef struct {
     bool system_healthy;                // Overall system health status
 } watchdog_status_t;
 
-//--------------------------------------------------------------------+
-// WATCHDOG API
-//--------------------------------------------------------------------+
+
+
+
 
 /**
  * Initialize the watchdog system

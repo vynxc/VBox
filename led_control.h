@@ -14,13 +14,13 @@
 #include <stdbool.h>
 #include "defines.h"
 
-//--------------------------------------------------------------------+
-// NEOPIXEL DEFINITIONS
-//--------------------------------------------------------------------+
 
-// All color definitions are now in defines.h
 
-// System status enumeration
+
+
+
+
+
 typedef enum {
     STATUS_BOOTING,
     STATUS_USB_DEVICE_ONLY,
@@ -36,20 +36,20 @@ typedef enum {
     STATUS_USB_RESET_FAILED
 } system_status_t;
 
-//--------------------------------------------------------------------+
-// FUNCTION PROTOTYPES
-//--------------------------------------------------------------------+
 
-// LED blinking functions
+
+
+
+
 void led_blinking_task(void);
 void led_set_blink_interval(uint32_t interval_ms);
 
-// Neopixel functions
+
 void neopixel_init(void);
 void neopixel_enable_power(void);
 void neopixel_set_color(uint32_t color);
 void neopixel_set_color_with_brightness(uint32_t color, float brightness);
-// Integer brightness variant (0-255) for fixed-point code paths
+
 void neopixel_set_color_with_brightness_u8(uint32_t color, uint8_t brightness);
 void neopixel_update_status(void);
 void neopixel_status_task(void);
@@ -65,15 +65,15 @@ void neopixel_trigger_usb_reset_failed(void);
 void neopixel_set_status_override(system_status_t status);
 void neopixel_clear_status_override(void);
 void neopixel_trigger_rainbow_effect(void);
-// Advance the rainbow based on movement delta (x,y). Call from HID path when movement observed.
+
 void neopixel_rainbow_on_movement(int16_t dx, int16_t dy);
 
-// Utility functions
+
 uint32_t neopixel_rgb_to_grb(uint32_t rgb);
 uint32_t neopixel_apply_brightness(uint32_t color, float brightness);
 uint32_t neopixel_apply_brightness_u8(uint32_t color, uint8_t brightness);
 void neopixel_breathing_effect(void);
-// Flush any queued LED frames to the PIO FIFO if space is available
+
 void neopixel_flush_queue(void);
 
 #endif // LED_CONTROL_H

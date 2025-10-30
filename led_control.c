@@ -14,27 +14,27 @@
 #include <stdio.h>
 #include <string.h>
 
-//--------------------------------------------------------------------+
-// TYPE DEFINITIONS
-//--------------------------------------------------------------------+
+
+
+
 
 /**
  * @brief LED controller state structure
  */
 typedef struct
 {
-    // Hardware state
+
     bool initialized;
     PIO pio_instance;
     uint state_machine;
 
-    // Status management
+
     system_status_t current_status;
     system_status_t status_override;
     bool status_override_active;
     uint32_t boot_start_time;
 
-    // Activity tracking
+
     bool activity_flash_active;
     uint32_t activity_flash_start_time;
     uint32_t activity_flash_color;
@@ -42,22 +42,22 @@ typedef struct
     bool caps_lock_flash_active;
     uint32_t caps_lock_flash_start_time;
 
-    // Breathing effect
+
     bool breathing_enabled;
     uint32_t breathing_start_time;
-    // Brightness in 0-255 (fixed-point replacement for float)
+
     uint8_t current_brightness_u8;
 
-    // LED blinking
+
     uint32_t blink_interval_ms;
     uint32_t last_blink_time;
     bool led_state;
 
-    // Rainbow effect
+
     bool rainbow_effect_active;
     uint32_t rainbow_start_time;
     uint16_t rainbow_hue; // 0..359
-    // Movement-driven rainbow
+
     uint32_t rainbow_last_update_time_ms;
 } led_controller_t;
 
@@ -71,9 +71,9 @@ typedef struct
     const char *name;
 } status_config_t;
 
-//--------------------------------------------------------------------+
-// PRIVATE VARIABLES
-//--------------------------------------------------------------------+
+
+
+
 
 static led_controller_t g_led_controller = {
     .initialized = false,
@@ -94,7 +94,7 @@ static led_controller_t g_led_controller = {
     .rainbow_start_time = 0,
     .rainbow_hue = 0};
 
-// Status configuration lookup table
+
 static const status_config_t g_status_configs[] = {
     [STATUS_BOOTING] = {COLOR_BOOTING, true, "BOOTING"},
     [STATUS_USB_DEVICE_ONLY] = {COLOR_USB_DEVICE_ONLY, false, "USB_DEVICE_ONLY"},
@@ -109,9 +109,9 @@ static const status_config_t g_status_configs[] = {
     [STATUS_USB_RESET_SUCCESS] = {COLOR_USB_RESET_SUCCESS, false, "USB_RESET_SUCCESS"},
     [STATUS_USB_RESET_FAILED] = {COLOR_USB_RESET_FAILED, true, "USB_RESET_FAILED"}};
 
-//--------------------------------------------------------------------+
-// PRIVATE FUNCTION DECLARATIONS
-//--------------------------------------------------------------------+
+
+
+
 
 static bool validate_brightness(float brightness);
 static bool validate_color(uint32_t color);
@@ -128,7 +128,7 @@ static void handle_rainbow_effect(void);
 static void log_status_change(system_status_t status, uint32_t color, bool breathing);
 static uint32_t hsv_to_rgb(uint16_t hue, uint8_t saturation, uint8_t value);
 
-// Small non-blocking LED frame queue (GRB 24-bit values)
+
 #define LED_QUEUE_SIZE 8
 static uint32_t s_led_queue[LED_QUEUE_SIZE];
 static uint8_t s_led_q_head = 0;
@@ -155,9 +155,9 @@ static inline bool led_queue_pop(uint32_t *out)
     return true;
 }
 
-//--------------------------------------------------------------------+
-// UTILITY FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 /**
  * @brief Validate brightness value
@@ -199,13 +199,13 @@ static bool is_time_elapsed(uint32_t start_time, uint32_t duration_ms)
     return (get_current_time_ms() - start_time) >= duration_ms;
 }
 
-//--------------------------------------------------------------------+
-// LED BLINKING FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 void led_blinking_task(void)
 {
-    // Skip if blinking is disabled
+
     if (g_led_controller.blink_interval_ms == 0)
     {
         return;
@@ -213,13 +213,13 @@ void led_blinking_task(void)
 
     uint32_t current_time = get_current_time_ms();
 
-    // Check if it's time to toggle
+
     if (!is_time_elapsed(g_led_controller.last_blink_time, g_led_controller.blink_interval_ms))
     {
         return;
     }
 
-    // Update timing and toggle LED
+
     g_led_controller.last_blink_time = current_time;
     g_led_controller.led_state = !g_led_controller.led_state;
     gpio_put(PIN_LED, g_led_controller.led_state);
@@ -229,31 +229,31 @@ void led_set_blink_interval(uint32_t interval_ms)
 {
     g_led_controller.blink_interval_ms = interval_ms;
 
-    // Reset timing when interval changes
+
     if (interval_ms > 0)
     {
         g_led_controller.last_blink_time = get_current_time_ms();
     }
 }
 
-//--------------------------------------------------------------------+
-// NEOPIXEL CORE FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 void neopixel_init(void)
 {
-    // Prevent double initialization
+
     if (g_led_controller.initialized)
     {
         return;
     }
 
-    // Initialize LED pin
+
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
     gpio_put(PIN_LED, 0);
 
-    // Initialize neopixel power pin but keep it OFF during early boot
+
     gpio_init(NEOPIXEL_POWER);
     gpio_set_dir(NEOPIXEL_POWER, GPIO_OUT);
     gpio_put(NEOPIXEL_POWER, 0); // Keep power OFF initially
@@ -268,20 +268,20 @@ void neopixel_enable_power(void)
         return;
     }
 
-    // Enable neopixel power
+
     gpio_put(NEOPIXEL_POWER, 1);
 
-    // Allow power to stabilize
+
     sleep_ms(POWER_STABILIZATION_DELAY_MS);
 
-    // Load WS2812 program into PIO
+
     uint offset = pio_add_program(g_led_controller.pio_instance, &ws2812_program);
     if (offset == (uint)-1)
     {
         return;
     }
 
-    // Initialize state machine
+
     ws2812_program_init(g_led_controller.pio_instance,
                         g_led_controller.state_machine,
                         offset,
@@ -289,11 +289,11 @@ void neopixel_enable_power(void)
                         WS2812_FREQUENCY_HZ,
                         false);
 
-    // Mark as initialized and set initial state
+
     g_led_controller.initialized = true;
     g_led_controller.boot_start_time = get_current_time_ms();
 
-    // Set initial color
+
     neopixel_set_color(COLOR_BOOTING);
 
     (void)0; // suppressed init completion log
@@ -355,10 +355,10 @@ void neopixel_set_color_with_brightness(uint32_t color, float brightness)
         return;
     }
 
-    // Apply brightness and convert to GRB format
+
     const uint32_t dimmed_color = neopixel_apply_brightness(color, brightness);
     const uint32_t grb_color = neopixel_rgb_to_grb(dimmed_color);
-    // Attempt non-blocking write; queue if FIFO full
+
     if (g_led_controller.initialized)
     {
         if (!pio_sm_is_tx_fifo_full(g_led_controller.pio_instance, g_led_controller.state_machine))
@@ -401,9 +401,9 @@ void neopixel_flush_queue(void)
     }
 }
 
-//--------------------------------------------------------------------+
-// BREATHING EFFECT
-//--------------------------------------------------------------------+
+
+
+
 
 void neopixel_breathing_effect(void)
 {
@@ -414,24 +414,24 @@ static void update_breathing_brightness(void)
 {
     const uint32_t current_time = get_current_time_ms();
 
-    // Initialize breathing start time if needed
+
     if (g_led_controller.breathing_start_time == 0)
     {
         g_led_controller.breathing_start_time = current_time;
     }
 
-    // Calculate cycle position
+
     uint32_t cycle_time = current_time - g_led_controller.breathing_start_time;
 
-    // Reset cycle if complete
+
     if (cycle_time >= BREATHING_CYCLE_MS)
     {
         g_led_controller.breathing_start_time = current_time;
         cycle_time = 0;
     }
 
-    // Fixed-point triangular waveform between min and max brightness (0-255)
-    // progress in [0..2*HALF); up then down
+
+
     uint32_t period = BREATHING_CYCLE_MS;
     uint32_t t = cycle_time % period;
     uint8_t min_b = (uint8_t)(BREATHING_MIN_BRIGHTNESS * 255.0f);
@@ -440,7 +440,7 @@ static void update_breathing_brightness(void)
     uint16_t val;
     if (t < BREATHING_HALF_CYCLE_MS)
     {
-        // increasing: val = min + range * t / half
+
         val = min_b + (uint16_t)((uint32_t)range * t / BREATHING_HALF_CYCLE_MS);
     }
     else
@@ -451,38 +451,38 @@ static void update_breathing_brightness(void)
     g_led_controller.current_brightness_u8 = (uint8_t)val;
 }
 
-//--------------------------------------------------------------------+
-// STATUS MANAGEMENT
-//--------------------------------------------------------------------+
+
+
+
 
 static system_status_t determine_system_status(void)
 {
-    // Check for suspended state first
+
     if (tud_suspended())
     {
         return STATUS_SUSPENDED;
     }
 
-    // Check boot timeout first - if we've been running long enough, we should exit boot status
+
     if (g_led_controller.boot_start_time == 0)
     {
         g_led_controller.boot_start_time = get_current_time_ms();
     }
 
-    // If still in boot timeout, stay in booting status
+
     if (!is_time_elapsed(g_led_controller.boot_start_time, BOOT_TIMEOUT_MS))
     {
         return STATUS_BOOTING;
     }
 
-    // After boot timeout, determine actual status based on USB connections
+
     const bool device_mounted = tud_mounted();
 
 #if PIO_USB_AVAILABLE
     const bool host_mounted = tuh_mounted(1);
     const bool mouse_connected = is_mouse_connected();
 
-    // Both USB device and host are active
+
     if (device_mounted && host_mounted)
     {
         if (mouse_connected)
@@ -490,12 +490,12 @@ static system_status_t determine_system_status(void)
             return STATUS_MOUSE_CONNECTED;
         }
     }
-    // Only USB device is mounted
+
     else if (device_mounted)
     {
         return STATUS_USB_DEVICE_ONLY;
     }
-    // Only USB host has devices
+
     else if (host_mounted)
     {
         if (mouse_connected)
@@ -503,13 +503,13 @@ static system_status_t determine_system_status(void)
             return STATUS_MOUSE_CONNECTED;
         }
     }
-    // Neither USB device nor host have connections - show host only since it's initialized
+
     else
     {
         return STATUS_USB_HOST_ONLY;
     }
 #else
-    // PIO USB not available, only check device
+
     if (device_mounted)
     {
         return STATUS_USB_DEVICE_ONLY;
@@ -534,7 +534,7 @@ static void apply_status_change(system_status_t new_status)
     g_led_controller.current_status = new_status;
     g_led_controller.breathing_enabled = config->breathing_effect;
 
-    // Reset breathing timing when status changes
+
     if (g_led_controller.breathing_enabled)
     {
         g_led_controller.breathing_start_time = 0;
@@ -561,16 +561,16 @@ static void log_status_change(system_status_t status, uint32_t color, bool breat
 {
     const status_config_t *config = &g_status_configs[status];
 
-    // Intentionally left blank to avoid blocking logs in hot paths.
+
     (void)status;
     (void)color;
     (void)breathing;
     (void)config;
 }
 
-//--------------------------------------------------------------------+
-// TASK HANDLERS
-//--------------------------------------------------------------------+
+
+
+
 
 static void handle_activity_flash(void)
 {
@@ -582,7 +582,7 @@ static void handle_activity_flash(void)
     if (is_time_elapsed(g_led_controller.activity_flash_start_time, ACTIVITY_FLASH_DURATION_MS))
     {
         g_led_controller.activity_flash_active = false;
-        // Return to normal status display will happen in main task
+
     }
     else
     {
@@ -600,7 +600,7 @@ static void handle_caps_lock_flash(void)
     if (is_time_elapsed(g_led_controller.caps_lock_flash_start_time, ACTIVITY_FLASH_DURATION_MS))
     {
         g_led_controller.caps_lock_flash_active = false;
-        // Return to normal status display will happen in main task
+
     }
 }
 
@@ -620,17 +620,17 @@ static void handle_breathing_effect(void)
 void neopixel_status_task(void)
 {
     static uint32_t last_update_time = 0;
-    // Opportunistically drain any queued LED frames
+
     neopixel_flush_queue();
 
-    // Throttle updates to reduce CPU usage
+
     if (!is_time_elapsed(last_update_time, STATUS_UPDATE_INTERVAL_MS))
     {
         return;
     }
     last_update_time = get_current_time_ms();
 
-    // Use override status if active, otherwise update normally
+
     if (g_led_controller.status_override_active)
     {
         if (g_led_controller.current_status != g_led_controller.status_override)
@@ -643,28 +643,28 @@ void neopixel_status_task(void)
         neopixel_update_status();
     }
 
-    // Handle special effects (order matters for priority)
+
     handle_activity_flash();
     handle_caps_lock_flash();
 
-    // Handle rainbow effect (can overlay with other effects)
+
     if (g_led_controller.rainbow_effect_active)
     {
         handle_rainbow_effect();
-        // Rainbow takes priority over other effects
+
         return;
     }
 
-    // Handle other effects if rainbow is not active
+
     if (!g_led_controller.activity_flash_active && !g_led_controller.caps_lock_flash_active)
     {
         handle_breathing_effect();
     }
 }
 
-//--------------------------------------------------------------------+
-// ACTIVITY TRIGGER FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 static void trigger_activity_flash_internal(uint32_t color)
 {
@@ -714,9 +714,9 @@ void neopixel_trigger_caps_lock_flash(void)
     g_led_controller.caps_lock_flash_start_time = get_current_time_ms();
 }
 
-//--------------------------------------------------------------------+
-// USB RESET FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 void neopixel_trigger_usb_reset_pending(void)
 {
@@ -736,10 +736,10 @@ void neopixel_trigger_usb_reset_success(void)
         return;
     }
 
-    // Clear any status override first
+
     neopixel_clear_status_override();
 
-    // Trigger success flash
+
     trigger_activity_flash_internal(COLOR_USB_RESET_SUCCESS);
 
     (void)0; // suppressed status reset success log
@@ -756,9 +756,9 @@ void neopixel_trigger_usb_reset_failed(void)
     (void)0; // suppressed status reset failed log
 }
 
-//--------------------------------------------------------------------+
-// STATUS OVERRIDE FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 void neopixel_set_status_override(system_status_t status)
 {
@@ -785,9 +785,9 @@ void neopixel_clear_status_override(void)
     (void)0; // suppressed status override cleared log
 }
 
-//--------------------------------------------------------------------+
-// RAINBOW EFFECT FUNCTIONS
-//--------------------------------------------------------------------+
+
+
+
 
 /**
  * @brief Convert HSV color to RGB
@@ -846,13 +846,13 @@ static void handle_rainbow_effect(void)
 {
     const uint32_t current_time = get_current_time_ms();
 
-    // Initialize rainbow start time if needed
+
     if (g_led_controller.rainbow_start_time == 0)
     {
         g_led_controller.rainbow_start_time = current_time;
     }
 
-    // Check if rainbow effect should end (after 300ms for quick visual feedback)
+
     if (is_time_elapsed(g_led_controller.rainbow_start_time, 300))
     {
         g_led_controller.rainbow_effect_active = false;
@@ -860,16 +860,16 @@ static void handle_rainbow_effect(void)
         return;
     }
 
-    // If movement-driven updates have modified the hue, use that value.
-    // Otherwise, auto-advance the hue slowly for a gentle cycle.
+
+
     if (g_led_controller.rainbow_last_update_time_ms == 0)
     {
-        // No movement yet during this effect - auto-advance using integer math
+
         uint32_t elapsed = current_time - g_led_controller.rainbow_start_time;
-        // Scale float deg/ms to fixed-point 8.8 by multiplying by 256 and rounding
+
         uint32_t delta_fp = (uint32_t)(elapsed * (uint32_t)(RAINBOW_AUTO_SPEED_DEG_PER_MS * 256.0f));
         uint32_t hue_fp = ((uint32_t)g_led_controller.rainbow_hue << 8) + delta_fp;
-        // wrap at 360 degrees in fixed-point
+
         const uint32_t wrap = 360u << 8;
         if (hue_fp >= wrap)
             hue_fp %= wrap;
@@ -878,17 +878,17 @@ static void handle_rainbow_effect(void)
     }
     else
     {
-        // Clamp last update time to avoid huge jumps
+
         if (current_time - g_led_controller.rainbow_last_update_time_ms > 1000)
         {
             g_led_controller.rainbow_last_update_time_ms = current_time;
         }
     }
 
-    // Convert HSV to RGB with full saturation and brightness
+
     uint32_t rainbow_color = hsv_to_rgb(g_led_controller.rainbow_hue, 255, 255);
 
-    // Fixed brightness for rainbow to avoid float math
+
     neopixel_set_color_with_brightness_u8(rainbow_color, 200);
 }
 
@@ -899,11 +899,11 @@ void neopixel_trigger_rainbow_effect(void)
         return;
     }
 
-    // Always reset the effect for immediate visual feedback
+
     g_led_controller.rainbow_effect_active = true;
     g_led_controller.rainbow_start_time = get_current_time_ms();
 
-    // Start with a random hue for variety
+
     static uint32_t start_hue = 0;
     start_hue = (start_hue + 120) % 360; // Shift by 120 degrees each time
     g_led_controller.rainbow_hue = start_hue;
@@ -914,21 +914,21 @@ void neopixel_rainbow_on_movement(int16_t dx, int16_t dy)
     if (!g_led_controller.initialized)
         return;
 
-    // Compute movement magnitude (Manhattan) and scale to hue delta
+
     int32_t mag = abs(dx) + abs(dy);
     if (mag == 0)
         return;
 
-    // Update hue (wrap at 360)
+
     uint32_t new_hue = g_led_controller.rainbow_hue + (uint32_t)(mag * RAINBOW_MOVE_SCALE_DEG_PER_UNIT);
     while (new_hue >= 360)
         new_hue -= 360;
     g_led_controller.rainbow_hue = (uint16_t)new_hue;
 
-    // Mark last movement time so auto-advance uses different logic
+
     g_led_controller.rainbow_last_update_time_ms = get_current_time_ms();
 
-    // Activate rainbow effect (short visual feedback period will be handled in status task)
+
     g_led_controller.rainbow_effect_active = true;
     g_led_controller.rainbow_start_time = get_current_time_ms();
 }

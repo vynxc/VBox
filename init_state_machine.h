@@ -1,4 +1,4 @@
-// init_state_machine.h - Initialization State Machine
+
 
 #ifndef INIT_STATE_MACHINE_H
 #define INIT_STATE_MACHINE_H
@@ -6,9 +6,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-//--------------------------------------------------------------------+
-// Initialization States
-//--------------------------------------------------------------------+
+
+
+
 
 typedef enum {
     INIT_STATE_POWER_STABILIZATION,
@@ -33,9 +33,9 @@ typedef enum {
     INIT_EVENT_RESET_REQUEST
 } init_event_t;
 
-//--------------------------------------------------------------------+
-// State Machine Context
-//--------------------------------------------------------------------+
+
+
+
 
 typedef struct {
     init_state_t current_state;
@@ -48,9 +48,9 @@ typedef struct {
     char error_message[64];
 } init_state_machine_t;
 
-//--------------------------------------------------------------------+
-// State Machine Functions
-//--------------------------------------------------------------------+
+
+
+
 
 void init_state_machine_init(init_state_machine_t* sm);
 bool init_state_machine_process(init_state_machine_t* sm, init_event_t event);

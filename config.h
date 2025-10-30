@@ -1,15 +1,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// Include the consolidated defines
+
 #include "defines.h"
 
-//--------------------------------------------------------------------+
-// Build Configuration Overrides
-//--------------------------------------------------------------------+
+
+
+
 
 #if BUILD_CONFIG == BUILD_CONFIG_PRODUCTION
-    // Production: Conservative, reliable settings
+
     #undef USB_INIT_MAX_RETRIES
     #define USB_INIT_MAX_RETRIES                12
     
@@ -20,7 +20,7 @@
     #define COLD_BOOT_STABILIZATION_MS          3000
     
 #elif BUILD_CONFIG == BUILD_CONFIG_TESTING
-    // Testing: Fast iteration, extensive logging
+
     #undef USB_INIT_MAX_RETRIES
     #define USB_INIT_MAX_RETRIES                3
     
@@ -31,7 +31,7 @@
     #define COLD_BOOT_STABILIZATION_MS          500
     
 #elif BUILD_CONFIG == BUILD_CONFIG_DEBUG
-    // Debug: Maximum retries, detailed logging
+
     #undef USB_INIT_MAX_RETRIES
     #define USB_INIT_MAX_RETRIES                20
     

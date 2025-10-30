@@ -31,9 +31,9 @@
 #include "tusb.h"
 #endif
 
-//--------------------------------------------------------------------+
-// Type Definitions and Structures
-//--------------------------------------------------------------------+
+
+
+
 
 typedef struct {
     uint32_t watchdog_status_timer;
@@ -43,21 +43,21 @@ typedef struct {
     uint32_t usb_reset_cooldown_start;
 } main_loop_state_t;
 
-// Remove unused structures
-//typedef struct {
-//    bool button_pressed;
-//    uint32_t current_time;
-//    uint32_t hold_duration;
-//} button_state_t;
 
-//--------------------------------------------------------------------+
-// Constants and Configuration
-//--------------------------------------------------------------------+
+
+
+
+
+
+
+
+
+
 static const uint32_t WATCHDOG_STATUS_INTERVAL_MS = WATCHDOG_STATUS_REPORT_INTERVAL_MS;
 
-//--------------------------------------------------------------------+
-// Function Prototypes
-//--------------------------------------------------------------------+
+
+
+
 
 #if PIO_USB_AVAILABLE
 static void core1_main(void);
@@ -68,21 +68,21 @@ static bool initialize_system(void);
 static bool initialize_usb_device(void);
 static void main_application_loop(void);
 
-// Button handling functions
+
 static void process_button_input(system_state_t* state, uint32_t current_time);
 
-// Reporting functions
+
 static void report_watchdog_status(uint32_t current_time, uint32_t* watchdog_status_timer);
 
-// Utility functions
+
 static inline bool is_time_elapsed(uint32_t current_time, uint32_t last_time, uint32_t interval);
 
-//--------------------------------------------------------------------+
-// Core1 Main (USB Host Task)
-//--------------------------------------------------------------------+
+
+
+
 
 #if PIO_USB_AVAILABLE
-// Separate initialization concerns into focused functions
+
 
 typedef enum {
     INIT_SUCCESS,
@@ -104,39 +104,39 @@ typedef struct {
 
 
 static void core1_main(void) {
-    // Small delay to let core0 stabilize
+
     sleep_ms(10);
     
-    // CRITICAL: Configure PIO USB BEFORE tuh_init() - this is the key!
+
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = PIN_USB_HOST_DP;
     pio_cfg.pinout = PIO_USB_PINOUT_DPDM;
     
-    // Configure host stack with PIO USB configuration
+
     tuh_configure(USB_HOST_PORT, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     
-    // Initialize host stack on core1
+
     tuh_init(USB_HOST_PORT);
     
-    // Mark host as initialized
+
     usb_host_mark_initialized();
     
-    // Start the main host task loop
+
     core1_task_loop();
 }
 
 static void core1_task_loop(void) {
-    // Optimize heartbeat checking - use larger counter intervals
+
     uint32_t heartbeat_counter = 0;
     uint32_t last_heartbeat_ms = 0;
     
-    // Performance optimization: reduce heartbeat frequency checks
+
     const uint32_t heartbeat_check_threshold = CORE1_HEARTBEAT_CHECK_LOOPS * 4; // 4x less frequent
     
     while (true) {
         tuh_task();
         
-        // Heartbeat check optimization - much less frequent timing calls
+
         if (++heartbeat_counter >= heartbeat_check_threshold) {
             const uint32_t current_time = to_ms_since_boot(get_absolute_time());
             if ((current_time - last_heartbeat_ms) >= WATCHDOG_HEARTBEAT_INTERVAL_MS) {
@@ -149,42 +149,42 @@ static void core1_task_loop(void) {
 }
 
 #endif // PIO_USB_AVAILABLE
-//--------------------------------------------------------------------+
-// System Initialization Functions
-//--------------------------------------------------------------------+
+
+
+
 
 static bool initialize_system(void) {
-    // Initialize stdio first for early debug output
+
     stdio_init_all();
     
-    // Add extended startup delay for cold boot stability
+
     sleep_ms(200);
     
     if (!set_sys_clock_khz(CPU_FREQ, true)) {
         return false;
     }
     
-    // Re-initialize stdio after clock change with proper delay
+
     sleep_ms(100);  // Allow clock to stabilize
     stdio_init_all();
     sleep_ms(100);  // Allow UART to stabilize
     
-    // Configure UART0 for debug output with non-blocking operation
-    // Set a high baud rate to reduce printf backpressure and enable FIFO
+
+
     uart_init(uart0, STDIO_UART_BAUDRATE);
     uart_set_format(uart0, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(uart0, true);  // Enable FIFO for better performance
     
-    // Initialize KMBox serial handler on UART1
+
     kmbox_serial_init();
     
-    // Initialize LED control module (neopixel power OFF for now)
+
     neopixel_init();
 
-    // Initialize USB HID module (USB host power OFF for now)
+
     usb_hid_init();
 
-    // Initialize watchdog system (but don't start it yet)
+
     watchdog_init();
 
     return true;
@@ -203,15 +203,15 @@ static bool initialize_usb_device(void) {
 
 
 
-//--------------------------------------------------------------------+
-// Button Handling Functions
-//--------------------------------------------------------------------+
+
+
+
 
 static void process_button_input(system_state_t* state, uint32_t current_time) {
-    // Performance optimization: single GPIO read per call
+
     const bool button_currently_pressed = !gpio_get(PIN_BUTTON); // Button is active low
 
-    // Handle cooldown after USB reset - early exit for performance
+
     if (state->usb_reset_cooldown) {
         if (is_time_elapsed(current_time, state->usb_reset_cooldown_start, USB_RESET_COOLDOWN_MS)) {
             state->usb_reset_cooldown = false;
@@ -220,13 +220,13 @@ static void process_button_input(system_state_t* state, uint32_t current_time) {
         return; // Skip button processing during cooldown
     }
 
-    // Optimized state machine - avoid redundant checks
+
     if (button_currently_pressed) {
         if (!state->button_pressed_last) {
-            // Button just pressed
+
             state->last_button_press_time = current_time;
         } else {
-            // Button being held - check for reset trigger
+
             if (is_time_elapsed(current_time, state->last_button_press_time, BUTTON_HOLD_TRIGGER_MS)) {
                 usb_stacks_reset();
                 state->usb_reset_cooldown = true;
@@ -234,16 +234,16 @@ static void process_button_input(system_state_t* state, uint32_t current_time) {
             }
         }
     } else if (state->button_pressed_last) {
-        // Button just released - could add short press handling here if needed
-        // For now, no action on short press
+
+
     }
 
     state->button_pressed_last = button_currently_pressed;
 }
 
-//--------------------------------------------------------------------+
-// Reporting Functions
-//--------------------------------------------------------------------+
+
+
+
 
 static void report_watchdog_status(uint32_t current_time, uint32_t* watchdog_status_timer) {
     if (!is_time_elapsed(current_time, *watchdog_status_timer, WATCHDOG_STATUS_INTERVAL_MS)) {
@@ -253,35 +253,35 @@ static void report_watchdog_status(uint32_t current_time, uint32_t* watchdog_sta
     *watchdog_status_timer = current_time;
 }
 
-//--------------------------------------------------------------------+
-// Utility Functions
-//--------------------------------------------------------------------+
+
+
+
 
 static inline bool is_time_elapsed(uint32_t current_time, uint32_t last_time, uint32_t interval) {
     return (current_time - last_time) >= interval;
 }
 
-//--------------------------------------------------------------------+
-// Main Application Loop
-//--------------------------------------------------------------------+
+
+
+
 
 
 static void main_application_loop(void) {
     system_state_t* state = get_system_state();
     system_state_init(state);
     
-    // Cache frequently used intervals
+
     const uint32_t watchdog_interval = WATCHDOG_TASK_INTERVAL_MS;
     const uint32_t visual_interval = VISUAL_TASK_INTERVAL_MS;
     const uint32_t error_interval = ERROR_CHECK_INTERVAL_MS;
     const uint32_t button_interval = BUTTON_DEBOUNCE_MS;
     const uint32_t status_report_interval = WATCHDOG_STATUS_REPORT_INTERVAL_MS;
 
-    // Performance optimization: reduce time sampling frequency
+
     uint32_t current_time = to_ms_since_boot(get_absolute_time());
     uint16_t loop_counter = 0;
     
-    // Batch time checks with bit flags for efficiency
+
     uint8_t task_flags = 0;
     #define WATCHDOG_FLAG   (1 << 0)
     #define VISUAL_FLAG     (1 << 1)
@@ -289,19 +289,19 @@ static void main_application_loop(void) {
     #define STATUS_FLAG     (1 << 3)
 
     while (true) {
-        // TinyUSB device task - highest priority
+
         tud_task();
         hid_device_task();
         
-        // KMBox serial task - high priority for responsiveness
+
         kmbox_serial_task();
         
-        // Sample time less frequently to reduce overhead
+
         if (++loop_counter >= 32) {  // Sample every 32 loops
             current_time = to_ms_since_boot(get_absolute_time());
             loop_counter = 0;
             
-            // Batch all time checks into flags for efficiency
+
             task_flags = 0;
             if ((current_time - state->last_watchdog_time) >= watchdog_interval) {
                 task_flags |= WATCHDOG_FLAG;
@@ -316,13 +316,13 @@ static void main_application_loop(void) {
                 task_flags |= STATUS_FLAG;
             }
             
-            // Error check optimization - only when other tasks run
+
             if (task_flags && (current_time - state->last_error_check_time) >= error_interval) {
                 state->last_error_check_time = current_time;
             }
         }
         
-        // Execute tasks based on flags (avoids repeated time checks)
+
         if (task_flags & WATCHDOG_FLAG) {
             watchdog_task();
             watchdog_core0_heartbeat();
@@ -346,19 +346,19 @@ static void main_application_loop(void) {
     }
 }
 
-//--------------------------------------------------------------------+
-// Main Function
-//--------------------------------------------------------------------+
+
+
+
 
 int main(void) {
     
-    // Set system clock to 120MHz or 240MHz (required for PIO USB, speed depends on device type)
+
     set_sys_clock_khz(CPU_FREQ, true);
     
-    // Small delay for clock stabilization
+
     sleep_ms(10);
     
-    // Initialize basic GPIO
+
     #ifdef PIN_USB_5V
     gpio_init(PIN_USB_5V);
     gpio_set_dir(PIN_USB_5V, GPIO_OUT);
@@ -370,7 +370,7 @@ int main(void) {
     gpio_put(PIN_LED, 1);  // Turn on LED
     
     
-    // Initialize system components
+
     if (!initialize_system()) {
         return -1;
     }
