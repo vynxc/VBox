@@ -439,41 +439,20 @@ static void handle_hid_device_connection(uint8_t dev_addr, uint8_t itf_protocol)
 
 static bool process_mouse_report_internal(const hid_mouse_report_t *report)
 {
-    if (report == NULL)
-    {
+    if (!report || !tud_mounted() || !tud_ready() || !tud_hid_ready())
         return false;
-    }
+        
+    // Keep first 5 bits (L/R/M/S1/S2 buttons)
+    uint8_t valid_buttons = report->buttons & 0x1F; 
 
-    // Check if USB device is ready to send reports
-    if (!tud_mounted() || !tud_ready())
-    {
-        printf("Mouse report dropped: USB device not ready (mounted=%d, ready=%d)\\n",
-               tud_mounted(), tud_ready());
-        return false;
-    }
-
-    // Fast button validation using bitwise AND
-    uint8_t valid_buttons = report->buttons & 0x1F; // Keep first 5 bits (L/R/M/S1/S2 buttons)
-
-    // Update physical button states in kmbox (for lock functionality)
     kmbox_update_physical_buttons(valid_buttons);
 
-    // Add physical mouse movement to kmbox accumulators (respecting axis locks)
     if (report->x != 0 || report->y != 0)
-    {
         kmbox_add_mouse_movement(report->x, report->y);
-        printf("Mouse movement: x=%d, y=%d\\n", report->x, report->y);
-    }
 
-    // Add physical wheel movement
     if (report->wheel != 0)
-    {
         kmbox_add_wheel_movement(report->wheel);
-    }
 
-    // Now get the final movement and button values from kmbox which include
-    // both any previously queued command movement and the newly added
-    // physical movement.
     uint8_t buttons_to_send;
     int8_t x, y, wheel, pan;
     kmbox_get_mouse_report(&buttons_to_send, &x, &y, &wheel, &pan);
@@ -482,26 +461,10 @@ static bool process_mouse_report_internal(const hid_mouse_report_t *report)
     int8_t final_y = y;
     int8_t final_wheel = wheel;
 
-    // Check if HID interface is ready
     if (!tud_hid_ready())
-    {
-        printf("Mouse report dropped: HID interface not ready\\n");
         return false;
-    }
 
-    // Fast path: skip ready check for maximum performance
-    bool success = tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
-    if (success)
-    {
-        printf("Mouse report sent: buttons=0x%02x, x=%d, y=%d, wheel=%d\\n",
-               buttons_to_send, final_x, final_y, final_wheel);
-        return true;
-    }
-    else
-    {
-        printf("Mouse report FAILED to send\\n");
-        return false;
-    }
+    return tud_hid_mouse_report(REPORT_ID_MOUSE, buttons_to_send, final_x, final_y, final_wheel, pan);
 }
 
 static void print_device_info(uint8_t dev_addr, const tusb_desc_device_t *desc)
@@ -834,8 +797,8 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, const uint8_
                 // Right shift by 2 bits (divide by 4) to reduce sensitivity and prevent overflow
                 // BUG: causes moving right and down feel weird and slow! Removing fixes it!
                 // BUG: Moving mouse too fast will cause it not to move at all. im not sure where that bug is from
-                x16 >>= 2;
-                y16 >>= 2;
+                // x16 >>= 2;
+                // y16 >>= 2;
 
                 // Clamp to 8-bit range
                 mouse_report_local.x = (x16 > 127) ? 127 : ((x16 < -128) ? -128 : (int8_t)x16);
