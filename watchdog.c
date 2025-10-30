@@ -1,5 +1,5 @@
 /*
- * Hurricane PIOKMBox Firmware
+ * Hurricane vbox Firmware
  */
 
 

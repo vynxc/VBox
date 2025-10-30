@@ -1,5 +1,5 @@
 /*
-* Hurricane PIOKMbox Firmware
+* Hurricane vbox Firmware
 */
 
 #ifndef USB_HID_H

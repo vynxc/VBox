@@ -1,5 +1,5 @@
 /*
- * Hurricane PIOKMBox Firmware
+ * Hurricane vbox Firmware
  */
 
 #include "usb_hid.h"
@@ -192,10 +192,10 @@ const char *get_dynamic_serial_string()
     static char dynamic_serial[64];
     if (attached_vid && attached_pid)
     {
-        snprintf(dynamic_serial, sizeof(dynamic_serial), "PIOKMbox_%04X_%04X", attached_vid, attached_pid);
+        snprintf(dynamic_serial, sizeof(dynamic_serial), "vbox_%04X_%04X", attached_vid, attached_pid);
         return dynamic_serial;
     }
-    return "PIOKMbox_v1.0";
+    return "vbox_v1.0";
 }
 
 

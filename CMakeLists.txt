@@ -28,15 +28,15 @@ set(PICO_BOARD waveshare_rp2350_usb_a CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(PIOKMbox C CXX ASM)
+project(vbox C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(PIOKMbox
-    PIOKMbox.c
+add_executable(vbox
+    vbox.c
     led_control.c
     usb_hid.c
     watchdog.c
@@ -46,17 +46,17 @@ add_executable(PIOKMbox
 )
 
 # generate the header file into the source tree as it is included in the RP2040 datasheet
-pico_generate_pio_header(PIOKMbox ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR})
+pico_generate_pio_header(vbox ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR})
 
-pico_set_program_name(PIOKMbox "PIOKMbox")
-pico_set_program_version(PIOKMbox "0.1")
+pico_set_program_name(vbox "vbox")
+pico_set_program_version(vbox "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(PIOKMbox 1)
-pico_enable_stdio_usb(PIOKMbox 0)
+pico_enable_stdio_uart(vbox 1)
+pico_enable_stdio_usb(vbox 0)
 
 # Add the standard library to the build
-target_link_libraries(PIOKMbox
+target_link_libraries(vbox
         pico_stdlib
         tinyusb_device
         tinyusb_host
@@ -85,7 +85,7 @@ add_subdirectory(lib/kmbox-commands)
 # PIO USB library support (now enabled)
 message(STATUS "PIO USB library support enabled")
 # Add compile definitions for TinyUSB and pin configurations
-target_compile_definitions(PIOKMbox PRIVATE
+target_compile_definitions(vbox PRIVATE
         CFG_TUSB_CONFIG_FILE="tusb_config.h"
         BOARD_TUH_RHPORT=1
         BOARD_TUD_RHPORT=0
@@ -99,21 +99,21 @@ target_compile_definitions(PIOKMbox PRIVATE
 )
 
 # Link PIO USB library
-target_link_libraries(PIOKMbox pico_pio_usb)
+target_link_libraries(vbox pico_pio_usb)
 
 # Link KMBox Commands library
-target_link_libraries(PIOKMbox kmbox_commands)
+target_link_libraries(vbox kmbox_commands)
 
 # Add PIO USB HCD implementation directly
-target_sources(PIOKMbox PRIVATE
+target_sources(vbox PRIVATE
     ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/dcd_pio_usb.c
     ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
  )
 
 # Add the standard include files to the build
-target_include_directories(PIOKMbox PRIVATE
+target_include_directories(vbox PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/src
 )
 
-pico_add_extra_outputs(PIOKMbox)
+pico_add_extra_outputs(vbox)

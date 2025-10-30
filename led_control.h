@@ -1,5 +1,5 @@
 /*
- * LED Control Module for PIOKMbox
+ * LED Control Module for vbox
  * 
  * This module handles:
  * - Neopixel status display

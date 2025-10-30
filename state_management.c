@@ -1,5 +1,5 @@
 /*
- * Hurricane PIOKMBox Firmware
+ * Hurricane vbox Firmware
 */
 
 #include "state_management.h"

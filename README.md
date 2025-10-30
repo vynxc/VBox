@@ -1,4 +1,4 @@
-# PIOKMbox — USB HID passthrough for Raspberry Pi Pico
+# vbox — USB HID passthrough for Raspberry Pi Pico
 
 A dual-role USB HID firmware for Raspberry Pi Pico boards that forwards mouse and keyboard input from a USB device (host port) to a PC (device port) and accepts KMBox-compatible serial commands for precise control and automation.
 
@@ -49,7 +49,7 @@ You can change pins and board type via macros in `defines.h` or CMake cache opti
 ./build.sh
 ```
 
-This script creates a fresh `build/` directory, configures CMake, builds the project, and, if `picotool` is available, attempts to load `PIOKMbox.uf2` automatically.
+This script creates a fresh `build/` directory, configures CMake, builds the project, and, if `picotool` is available, attempts to load `vbox.uf2` automatically.
 
 ### Manual build
 
@@ -62,14 +62,14 @@ make -j4   # or: ninja
 
 ### Build outputs
 
-- `PIOKMbox.uf2` — UF2 firmware for drag-and-drop flashing
-- `PIOKMbox.elf` — ELF for debugging
-- `PIOKMbox.bin`, `PIOKMbox.hex` — alternative images
+- `vbox.uf2` — UF2 firmware for drag-and-drop flashing
+- `vbox.elf` — ELF for debugging
+- `vbox.bin`, `vbox.hex` — alternative images
 
 ### Flashing
 
 - Automatic (if picotool is installed): run `./build.sh`
-- Manual UF2: hold BOOTSEL while plugging USB, mount RPI-RP2, copy `PIOKMbox.uf2`
+- Manual UF2: hold BOOTSEL while plugging USB, mount RPI-RP2, copy `vbox.uf2`
 
 Note: To target a different board, set `PICO_BOARD` via CMake cache or edit `CMakeLists.txt` (default is `adafruit_feather_rp2040_usb_host`).
 
@@ -129,8 +129,8 @@ km.lock.my(1)    # lock Y axis
 ### Project layout
 
 ```text
-PIOKMbox/
-├── PIOKMbox.c               # Main firmware (core orchestration)
+vbox/
+├── vbox.c               # Main firmware (core orchestration)
 ├── usb_hid.*                # HID device/host, VID/PID & string mirroring
 ├── led_control.*            # LED & WS2812 control
 ├── watchdog.*               # HW/SW watchdog + inter-core heartbeats

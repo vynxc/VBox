@@ -1,6 +1,6 @@
 /*
  * KMBox Serial Command Handler
- * Integrates kmbox-commands library with the PIOKMBox firmware
+ * Integrates kmbox-commands library with the vbox firmware
  * Uses dedicated UART1 for KMBox serial input (separate from debug UART0)
  */
 

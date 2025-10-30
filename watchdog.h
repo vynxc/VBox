@@ -1,5 +1,5 @@
 /*
- * Watchdog System for PIOKMbox
+ * Watchdog System for vbox
  * 
  * This module implements a dual-core watchdog system that monitors both CPU cores
  * and resets the device if either core becomes unresponsive.

@@ -1,8 +1,8 @@
 /*
- * Consolidated Defines for PIOKMbox
+ * Consolidated Defines for vbox
  * 
  * This header consolidates and organizes all #define constants used throughout
- * the PIOKMbox project, eliminating duplicates and providing clear categorization.
+ * the vbox project, eliminating duplicates and providing clear categorization.
  */
 
 #ifndef DEFINES_H
